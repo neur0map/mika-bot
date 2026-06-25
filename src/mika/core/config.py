@@ -51,6 +51,15 @@ class WebSettings(BaseSettings):
     secret: str = ""
 
 
+class PersonaSettings(BaseSettings):
+    """The bot's user-facing identity. The only place its name/persona is defined."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_PERSONA_")
+
+    name: str = "Mika"
+    file: Path = Path("./config/persona.md")
+
+
 class Settings(BaseSettings):
     """Top-level application settings, composed from the sections above."""
 
@@ -63,6 +72,7 @@ class Settings(BaseSettings):
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     web: WebSettings = Field(default_factory=WebSettings)
+    persona: PersonaSettings = Field(default_factory=PersonaSettings)
 
 
 @lru_cache(maxsize=1)

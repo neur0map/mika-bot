@@ -15,6 +15,7 @@ Custom git hooks wired through `.pre-commit-config.yaml`, enforcing the rules in
 | `check_ai_comments.py` | pre-commit | AI-slop, narration, placeholder comments |
 | `check_comment_ratio.py` | pre-commit | oversized files and comment-dominated files |
 | `check_secrets.py` | pre-commit | secret-shaped strings and sensitive filenames |
+| `check_persona_leak.py` | pre-commit | the codename in user-facing command surfaces |
 
 Run one by hand:
 

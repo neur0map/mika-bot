@@ -116,6 +116,11 @@ on that — do not reach sideways or upward.
 - **Errors.** Use the typed errors in `core/errors.py`; never `except: pass`.
 - **Config.** All tunables flow through `core/config.py` (pydantic settings) — no
   scattered `os.getenv`.
+- **Identity & codename.** The codename `mika` is for operator/config/infra only
+  (CLI, `MIKA_` env, systemd units, imports). It must **never** appear in user-facing
+  Discord surfaces — slash command names/descriptions, replies, component labels. The
+  bot's display name comes from `config.persona.name` + the persona file
+  (`config/persona.md`), both deployer-set. *(enforced: persona-leak hook)*
 
 ### What the AI-comment hook rejects (so you're not surprised)
 Lines like `# Step 1:`, `# Now we…`, `# Loop through…`, `# This function…`,

@@ -19,4 +19,7 @@ def setup() -> None:
     else:
         console.print(".env already present; leaving it untouched.")
     console.print("Edit [bold].env[/] (Discord token, LLM key), then run [bold]mika run[/].")
+    console.print(
+        "Brand your bot: set [bold]MIKA_PERSONA_NAME[/] and edit [bold]config/persona.md[/]."
+    )
     console.print("The full interactive wizard ships with the web/config subsystems.")
