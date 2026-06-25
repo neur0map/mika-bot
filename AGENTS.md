@@ -21,8 +21,9 @@ settings and overviews.
 - **Business model:** closed-source, **source-available on purchase** ("you get the
   source when you pay"). Write code accordingly: no telemetry phone-home, no
   hard-coded vendor lock, clean enough that a paying buyer can read and run it.
-- **Compliance:** official Bot API only. **Never** add user-account automation
-  (selfbot behavior) — it violates Discord ToS and is unsellable.
+- **Compliance:** the **shipped product** is official Bot API only. The `userbot/`
+  domain (personal user-account automation) is ToS-grey, **never distributed**, and
+  fenced off from the product — see Golden Rule 8.
 
 ---
 
@@ -44,6 +45,10 @@ settings and overviews.
 6. **Never import from `mikabot(JS)/`.** It is gitignored study material (the old
    JS bot + reference repos). Read it to learn; never copy or depend on it.
 7. **Green before commit.** `ruff`, `mypy`, and `pytest` must pass. *(enforced)*
+8. **Domain fencing.** Keep the three behavior domains separate: `bot/` (server,
+   shipped), `ai/` (shared, learning opt-in), `userbot/` (personal, ToS-grey, NOT
+   shipped, separate runtime). The product and `bot/` **never import `userbot/`**;
+   `userbot/` stays non-destructive; release builds exclude it.
 
 ---
 
@@ -55,29 +60,37 @@ Every directory has a single job and a `README.md` explaining it. Code is layere
 ```
 src/mika/
   core/          foundations: config, logging, errors, paths. Imports nothing internal.
-  persistence/   storage: db engine, models, repositories, migrations. → core
-  llm/           LLM work: providers, chat orchestration, memory, tools. → core, persistence
-                 NEVER imports discord.* — it must be usable without a bot.
-  bot/           Discord work: client, commands/, events/, components/. → core, llm, features, persistence
-  features/      pluggable feature modules (one folder each: tickets/, moderation/…). → core (+ interfaces)
-  web/           webserver BACKEND: settings + overview API (FastAPI). → core, persistence, service interfaces
-                 NEVER imports discord.* directly; talks to the bot via a service layer.
-  cli/           CLI + setup wizard (Typer). The orchestrator entrypoint. → core, system, web, bot
-  system/        systemd / process control: install, start, stop, status. → core
+  persistence/   storage: db engine, models, repositories. → core
 
-frontend/        the localhost UI (templates + static assets). Separate from backend. No Python app logic.
+  ai/            ── AI DOMAIN (shared) ──
+    llm/         inference: providers, chat, memory, tools. → core, persistence. NEVER imports discord.*
+    learning/    OPTIONAL self-learning: Hermes-agent reviewer + skills/tools/rules, feedback, reflection. → core, persistence, ai/llm
+
+  bot/           ── SERVER DOMAIN (bot account; compliant; shipped) ──
+                 client, commands/, events/, components/, features/. → core, persistence, ai
+
+  userbot/       ── USER DOMAIN (user account; selfbot; ToS-grey; NOT shipped; separate runtime) ──
+                 client, commands/ (non-destructive only). → core, ai/llm. The bot NEVER imports this.
+
+  web/           settings + overview API (FastAPI). → core, persistence. NEVER imports discord.*
+  cli/           CLI + setup wizard (Typer). The orchestrator entrypoint. → everything
+  system/        systemd / process control. → core
+
+frontend/        the localhost UI (templates + static). Separate from backend. No Python app logic.
 deploy/          systemd unit templates, docker, reverse-proxy config.
-tools/           dev-only: custom git hooks, maintenance scripts. Never shipped/imported by the app.
+tools/           dev-only: custom git hooks, scripts. Never shipped/imported by the app.
 tests/           mirrors src/mika/ layout.
 docs/            documentation.
 mikabot(JS)/     GITIGNORED reference material (study only).
 ```
 
 **Separation that must never blur:**
+- **Three behavior domains:** server (`bot/`) · user (`userbot/`) · AI (`ai/`).
 - **backend** (`src/`) vs **frontend** (`frontend/`)
-- **LLM work** (`llm/`) vs **bot work** (`bot/`)
+- **LLM inference** (`ai/llm/`) vs **self-learning** (`ai/learning/`) vs **bot work** (`bot/`)
 - **CLI** (`cli/`) vs **webserver** (`web/`)
 - **service control** (`system/`, `deploy/`) vs application logic
+- **shipped product** (everything except `userbot/`) vs **personal** (`userbot/`)
 
 If you need cross-layer access, define an interface in the lower layer and depend
 on that — do not reach sideways or upward.

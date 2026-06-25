@@ -1,4 +1,4 @@
-# llm/providers/
+# ai/llm/providers/
 
 Backend adapters, one file per provider, all implementing `base.ChatProvider`.
 

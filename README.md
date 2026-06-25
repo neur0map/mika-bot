@@ -44,9 +44,10 @@ the contributor rules are [`AGENTS.md`](AGENTS.md).
 |---|---|
 | `src/mika/core/` | Foundations: config, logging, errors, paths |
 | `src/mika/persistence/` | Storage: db engine, models, repositories |
-| `src/mika/llm/` | LLM work: providers, chat, memory, tools (no Discord) |
-| `src/mika/bot/` | Discord work: client, commands, events, components |
-| `src/mika/features/` | Pluggable feature modules (tickets, moderation, …) |
+| `src/mika/ai/llm/` | **AI domain** — inference: providers, chat, memory, tools (no Discord) |
+| `src/mika/ai/learning/` | **AI domain** — optional self-learning (Hermes reviewer, feedback, reflection) |
+| `src/mika/bot/` | **Server domain** — bot account: commands, events, components, features |
+| `src/mika/userbot/` | **User domain** — personal selfbot QoL (ToS-grey, not shipped, separate env) |
 | `src/mika/web/` | Webserver backend: settings + overview API |
 | `src/mika/cli/` | CLI + setup wizard (entrypoint: `mika`) |
 | `src/mika/system/` | systemd / process control |
