@@ -1,0 +1,57 @@
+# Guardrails enforcing AGENTS.md. Install with: uv run pre-commit install \
+#   --hook-type pre-commit --hook-type commit-msg
+# The reference folder is never linted.
+exclude: '^mikabot\(JS\)/'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: no-coauthors
+        name: block co-author / AI attribution in commit messages
+        entry: tools/hooks/check_no_coauthors.py
+        language: script
+        stages: [commit-msg]
+
+      - id: ai-comments
+        name: block AI-slop comments
+        entry: tools/hooks/check_ai_comments.py
+        language: script
+        types: [python]
+
+      - id: comment-ratio
+        name: enforce file size and comment density
+        entry: tools/hooks/check_comment_ratio.py
+        language: script
+        types: [python]
+
+      - id: secrets
+        name: block secrets and sensitive files
+        entry: tools/hooks/check_secrets.py
+        language: script
+        types: [text]
+
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy src
+        language: system
+        types: [python]
+        pass_filenames: false

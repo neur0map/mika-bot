@@ -1,0 +1,98 @@
+[project]
+name = "mika"
+version = "0.1.0"
+description = "Self-hostable multi-purpose Discord bot: LLM chat companion + bot framework."
+requires-python = ">=3.12"
+readme = "README.md"
+license = { file = "LICENSE" }
+
+dependencies = [
+    "discord-py>=2.4",        # Discord gateway + REST + slash commands (bot/)
+    "openai>=1.40",           # OpenAI-compatible client → OpenRouter/Groq/Together/OpenAI (llm/)
+    "httpx>=0.27",            # async HTTP for providers + web calls
+    "pydantic>=2.7",          # typed models everywhere
+    "pydantic-settings>=2.3", # env/config loading (core/config.py)
+    "sqlalchemy>=2.0",        # persistence layer
+    "aiosqlite>=0.20",        # async sqlite driver (default store; postgres-ready)
+    "fastapi>=0.111",         # web/ settings + overview API backend
+    "uvicorn[standard]>=0.30",# ASGI server for web/
+    "jinja2>=3.1",            # server-rendered settings pages (frontend templates)
+    "typer>=0.12",            # cli/ commands + setup wizard
+    "rich>=13.7",             # wizard/CLI output
+]
+
+[project.optional-dependencies]
+claude = ["anthropic>=0.34"]   # optional Claude provider for llm/providers
+postgres = ["asyncpg>=0.29"]   # optional postgres backend for persistence/
+
+[project.scripts]
+mika = "mika.cli.app:main"     # the single user-facing command
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pre-commit>=3.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mika"]
+
+# ── ruff: lint + format ──────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["mikabot(JS)"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",   # pycodestyle + pyflakes
+    "I",             # import sorting
+    "N",             # pep8 naming
+    "UP",            # pyupgrade
+    "B",             # bugbear
+    "A",             # shadowing builtins
+    "C901",          # mccabe complexity (no monster functions)
+    "S",             # bandit security checks
+    "PL",            # pylint
+    "SIM",           # simplify
+    "PTH",           # use pathlib
+    "ASYNC",         # async pitfalls
+    "DTZ",           # timezone-aware datetimes
+    "T20",           # no stray print()
+    "RUF",
+]
+ignore = [
+    "PLR0913",  # many-args: acceptable for command handlers / DI
+    "S101",     # asserts: allowed (re-enabled off in tests anyway)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]   # asserts + magic values are fine in tests
+"tools/hooks/*" = ["T20", "PTH", "E501", "C901", "PLR2004", "A004"]  # dev scripts: long regex tables are fine
+
+# ── mypy: strict typing ──────────────────────────────────────────────────────
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+exclude = ["mikabot\\(JS\\)", "build/"]
+
+# ── pytest ───────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
