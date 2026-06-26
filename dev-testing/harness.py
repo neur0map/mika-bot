@@ -234,6 +234,15 @@ def build_tree() -> app_commands.CommandTree[Any]:
     return tree
 
 
+def tree_for(*setups: Any) -> app_commands.CommandTree[Any]:
+    """A CommandTree with only the given category setup functions registered."""
+    client = discord.Client(intents=discord.Intents.none())
+    tree = app_commands.CommandTree(client)
+    for setup in setups:
+        setup(tree)
+    return tree
+
+
 def _find(
     tree: app_commands.CommandTree[Any], qualified: str
 ) -> app_commands.Command[Any, ..., Any]:

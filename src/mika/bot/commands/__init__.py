@@ -6,7 +6,7 @@ from typing import Any
 
 from discord import app_commands
 
-from mika.bot.commands import ai, basic, fun, images, info
+from mika.bot.commands import ai, basic, fun, images, info, text
 
 __all__ = ["register_all"]
 
@@ -18,3 +18,4 @@ def register_all(tree: app_commands.CommandTree[Any]) -> None:
     info.setup(tree)
     images.setup(tree)
     ai.setup(tree)
+    text.setup(tree)
