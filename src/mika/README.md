@@ -1,7 +1,8 @@
 # src/mika/ - backend
 
 All Python application code, organized into **three behavior domains** plus shared
-foundation and operator layers. Imports point downward only (../../AGENTS.md s3).
+foundation and operator layers. Imports point downward only (lower layers never
+import higher ones), keeping the code easy to follow and change.
 
 ## Behavior domains
 

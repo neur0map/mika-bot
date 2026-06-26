@@ -100,7 +100,7 @@ h3.grp-h:first-of-type{margin-top:0}
 </nav>
 {% endblock %}
 <main>{% block content %}{% endblock %}</main>
-<footer>{% block footer %}Self-hosted control panel. Open it to the internet safely with <a href="https://github.com/neur0map/mika-bot/blob/main/docs/EXPOSE.md">docs/EXPOSE.md</a>.{% endblock %}</footer>
+<footer>{% block footer %}{{ name }} control panel &middot; self-hosted. To reach it from another device, see <span class="mono">docs/EXPOSE.md</span>.{% endblock %}</footer>
 <script>
 (function(){var c=document.getElementById('clk');if(!c)return;
 function p(n){return(n<10?'0':'')+n;}

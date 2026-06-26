@@ -1,15 +1,16 @@
 # Simple commands for running your bot.
-.PHONY: help setup run chat doctor web update service stop
+.PHONY: help setup run chat doctor web deps service stop
 
 help:
 	@echo "make setup   - configure the bot (run this first)"
 	@echo "make run     - start the bot"
 	@echo "make chat    - quick AI test in the terminal"
 	@echo "make doctor  - check everything is working"
-	@echo "make web     - open the status page in your browser"
-	@echo "make update  - reinstall dependencies"
-	@echo "make service - run the bot 24/7 in the background"
+	@echo "make web     - open the dashboard in your browser"
+	@echo "make service - run the bot + dashboard 24/7 in the background"
 	@echo "make stop    - stop the background bot"
+	@echo "make deps    - reinstall dependencies"
+	@echo "Update to a new version: ./update.sh path/to/new-version.zip"
 
 setup:
 	uv run mika setup
@@ -26,7 +27,7 @@ doctor:
 web:
 	uv run mika web
 
-update:
+deps:
 	uv sync --no-dev
 
 service:
