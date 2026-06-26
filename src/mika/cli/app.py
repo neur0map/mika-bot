@@ -6,6 +6,7 @@ import typer
 
 from mika.cli.commands import chat as chat_cmd
 from mika.cli.commands import doctor as doctor_cmd
+from mika.cli.commands import invite as invite_cmd
 from mika.cli.commands import run as run_cmd
 from mika.cli.commands import setup as setup_cmd
 from mika.cli.commands import web as web_cmd
@@ -20,14 +21,15 @@ app = typer.Typer(
     help="Your all-purpose Discord bot + AI.",
 )
 app.command("setup")(setup_cmd.setup)
+app.command("invite")(invite_cmd.invite)
 app.command("run")(run_cmd.run)
 app.command("chat")(chat_cmd.chat)
 app.command("doctor")(doctor_cmd.doctor)
 app.command("web")(web_cmd.web)
 app.add_typer(service_app, name="service", help="Install/control the systemd service.")
+app.add_typer(honcho_app, name="honcho", help="Run the optional long-term memory service.")
 app.add_typer(userbot_app, name="userbot", help="Info on the personal companion (separate).")
 app.add_typer(learning_app, name="learning", help="The optional self-learning system.")
-app.add_typer(honcho_app, name="honcho", help="Run the optional long-term memory service.")
 
 
 def main() -> None:
