@@ -32,6 +32,7 @@ from mika.bot.commands import (
     nsfw,
     osint,
     palette,
+    persona,
     presence,
     quotes,
     science,
@@ -74,6 +75,7 @@ _GROUPS = (
     ("nsfw", "Age-gated images (NSFW channels only).", (nsfw.setup,)),
     ("anim", "Animated messages.", (animated.setup,)),
     ("presence", "Set the bot's status (admin).", (presence.setup,)),
+    ("persona", "Switch the bot's personality (admin).", (persona.setup,)),
     ("gif", "Search GIFs, stickers and clips.", (gif.setup,)),
     ("download", "Download media from a link.", (cobalt.setup,)),
 )

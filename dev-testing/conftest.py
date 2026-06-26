@@ -12,6 +12,7 @@ import pytest
 _TEST_DB = Path("/tmp/mika-devtest.sqlite3")
 _TEST_DB.unlink(missing_ok=True)
 os.environ["MIKA_DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
+os.environ["MIKA_PERSONA_FILE"] = "/tmp/mika-devtest-persona.md"
 
 sys.path.insert(0, str(Path(__file__).parent))
 
