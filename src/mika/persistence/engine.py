@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 
 from mika.core.config import get_settings
 from mika.core.paths import data_dir
+from mika.persistence import models as _models  # noqa: F401  (registers ORM models)
 from mika.persistence.base import Base
 
 
@@ -39,8 +40,6 @@ async def session() -> AsyncIterator[AsyncSession]:
 
 
 async def init_db() -> None:
-    """Create all tables. Imports models so they register on the metadata."""
-    from mika.persistence import models  # noqa: F401
-
+    """Create all tables (models are registered at import time)."""
     async with engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
