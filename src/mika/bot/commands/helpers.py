@@ -48,6 +48,16 @@ async def fetch_bytes(url: str) -> bytes:
         return response.content
 
 
+async def post_json(
+    url: str, payload: dict[str, Any], headers: dict[str, str] | None = None
+) -> Any:
+    """POST JSON to a URL and return the parsed JSON reply."""
+    async with _client() as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+
 def target_user(
     interaction: discord.Interaction, user: discord.User | discord.Member | None
 ) -> discord.User | discord.Member:

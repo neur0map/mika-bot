@@ -71,3 +71,4 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(helpers, "fetch_json", fake_json)
     monkeypatch.setattr(helpers, "fetch_text", fake_text)
     monkeypatch.setattr(helpers, "fetch_bytes", fake_bytes)
+    monkeypatch.setattr(helpers, "post_json", fake_json)

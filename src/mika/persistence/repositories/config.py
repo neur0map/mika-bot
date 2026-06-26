@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mika.persistence.engine import init_db, session
@@ -39,6 +39,11 @@ class ConfigRepository:
             delete(GuildConfig).where(GuildConfig.guild_id == guild_id, GuildConfig.key == key)
         )
 
+    async def get_all(self, guild_id: int) -> dict[str, str]:
+        stmt = select(GuildConfig).where(GuildConfig.guild_id == guild_id)
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return {row.key: row.value for row in rows}
+
 
 async def get_setting(guild_id: int, key: str, default: str | None = None) -> str | None:
     """Return a guild setting, or default when it isn't set."""
@@ -62,3 +67,10 @@ async def delete_setting(guild_id: int, key: str) -> None:
     async with session() as db:
         await ConfigRepository(db).remove(guild_id, key)
         await db.commit()
+
+
+async def all_settings(guild_id: int) -> dict[str, str]:
+    """Return every setting for a guild in one query."""
+    await _ensure()
+    async with session() as db:
+        return await ConfigRepository(db).get_all(guild_id)
