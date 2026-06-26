@@ -7,9 +7,11 @@ localhost web page for settings and overviews.
 
 Built in Python, designed to run on a Linux VPS under systemd.
 
-> **Status:** repository scaffold. The development environment, guardrails, and
-> directory architecture are in place; feature development follows.
 > **License:** proprietary, source-available on purchase — see [`LICENSE`](LICENSE).
+
+![Mika dashboard](docs/screenshots/dashboard.png)
+
+*The localhost dashboard (`mika web`): 340+ commands across 33 groups, at a glance.*
 
 ---
 
@@ -33,6 +35,17 @@ make install        # uv sync + pre-commit install
 make setup          # interactive setup wizard (tokens, models, features)
 make run
 ```
+
+## Documentation
+
+| Guide | What it covers |
+|---|---|
+| [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | Beginner walkthrough — zip to running bot in ~10 min |
+| [docs/DISCORD-SETUP.md](docs/DISCORD-SETUP.md) | Creating the bot, token, intents, invite, server/channel IDs |
+| [docs/COSTS.md](docs/COSTS.md) | What the AI costs and how to keep it cheap |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Run 24/7 — on the host or in Docker |
+| [docs/EXPOSE.md](docs/EXPOSE.md) | Open the dashboard to the internet safely (Tailscale/Cloudflare) |
+| [docs/HONCHO-MEMORY.md](docs/HONCHO-MEMORY.md) | Optional long-term semantic memory |
 
 ## What goes where
 

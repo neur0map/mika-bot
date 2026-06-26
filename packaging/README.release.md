@@ -2,6 +2,8 @@
 
 Welcome! This is your bot. Setup takes about 10 minutes and needs **no coding**.
 
+![Dashboard](docs/screenshots/dashboard.png)
+
 ## Quick start
 
 1. Open a terminal in this folder.
@@ -26,6 +28,9 @@ Welcome! This is your bot. Setup takes about 10 minutes and needs **no coding**.
 
 **Step-by-step beginner guide:** see `docs/GETTING-STARTED.md`
 **Getting your Discord token & permissions:** see `docs/DISCORD-SETUP.md`
+**What the AI costs:** see `docs/COSTS.md`
+**Running 24/7 (host or Docker):** see `docs/DEPLOY.md`
+**Opening the dashboard remotely:** see `docs/EXPOSE.md`
 
 ## Talking to the bot
 
