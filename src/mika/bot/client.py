@@ -29,14 +29,23 @@ class BotApp(commands.Bot):
         await self.llm.startup()
         register_all(self.tree)
         guild_ids = get_settings().discord.guild_id_list
-        if guild_ids:
-            for gid in guild_ids:
-                guild = discord.Object(id=int(gid))
-                self.tree.copy_global_to(guild=guild)
-                await self.tree.sync(guild=guild)
-        else:
+        if not guild_ids:
             await self.tree.sync()
-        logger.info("commands synced (%s)", "guild" if guild_ids else "global")
+            logger.info("commands synced (global)")
+            return
+        for gid in guild_ids:
+            guild = discord.Object(id=int(gid))
+            self.tree.copy_global_to(guild=guild)
+            try:
+                await self.tree.sync(guild=guild)
+                logger.info("commands synced (guild %s)", gid)
+            except discord.HTTPException as error:
+                logger.warning(
+                    "couldn't sync commands to guild %s (%s); is the bot invited "
+                    "there? run 'mika invite'. staying online - commands sync once it joins.",
+                    gid,
+                    error,
+                )
 
 
 def run() -> None:
