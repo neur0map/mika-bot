@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mika.persistence.engine import init_db, session
 from mika.persistence.models.message import Message
 
 
@@ -45,3 +46,17 @@ class MessageRepository:
         )
         rows = (await self._session.execute(stmt)).scalars().all()
         return list(reversed(rows))
+
+    async def latest(self, limit: int) -> list[Message]:
+        """Return the most recent messages across all channels, oldest first."""
+        stmt = select(Message).order_by(Message.id.desc()).limit(limit)
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return list(reversed(rows))
+
+
+async def recent_messages(limit: int = 50) -> list[str]:
+    """Return recent 'name: content' lines for the self-reflection pass."""
+    await init_db()
+    async with session() as db:
+        rows = await MessageRepository(db).latest(limit)
+    return [f"{row.author_name}: {row.content}" for row in rows]

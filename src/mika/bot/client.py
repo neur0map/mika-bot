@@ -8,6 +8,7 @@ from discord.ext import commands
 from mika.ai.llm.client import LLMClient
 from mika.bot.commands import register_all
 from mika.bot.events import register_events
+from mika.bot.scheduler import start_schedulers
 from mika.core.config import get_settings
 from mika.core.logging import configure_logging, get_logger
 from mika.persistence.engine import init_db
@@ -27,6 +28,7 @@ class BotApp(commands.Bot):
     async def setup_hook(self) -> None:
         await init_db()
         await self.llm.startup()
+        start_schedulers(self)
         register_all(self.tree)
         guild_ids = get_settings().discord.guild_id_list
         if not guild_ids:

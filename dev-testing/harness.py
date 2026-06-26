@@ -203,7 +203,10 @@ def make_bot(user: Fake, guild: Fake) -> Fake:
         guilds=[guild],
         latency=0.05,
         application_id=123456789,
-        llm=Fake(reply=AsyncMock(return_value="ai reply")),
+        llm=Fake(
+            reply=AsyncMock(return_value="ai reply"),
+            summarize=AsyncMock(return_value="- be concise\n- double-check facts"),
+        ),
         get_guild=MagicMock(return_value=guild),
         change_presence=AsyncMock(),
     )
