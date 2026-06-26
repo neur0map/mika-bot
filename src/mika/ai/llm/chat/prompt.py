@@ -12,7 +12,10 @@ def load_persona() -> str:
     base = persona_file.read_text(encoding="utf-8") if persona_file.exists() else ""
     intro = (
         f"You are {settings.persona.name}, a friendly Discord bot. "
-        f"Always stay in character as {settings.persona.name}. Keep replies concise."
+        f"Always stay in character as {settings.persona.name}. Keep replies concise. "
+        "For anything time-sensitive, or any specific person, product, or name you are "
+        "not certain about, use the web_search tool before answering. Never invent "
+        "facts; if a search turns up nothing, say so plainly."
     )
     return f"{intro}\n\n{base}".strip()
 

@@ -4,19 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
 from discord import Interaction, app_commands
 
+from mika.bot.commands import helpers
 from mika.core.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-async def _get_json(url: str) -> Any:
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()
 
 
 def setup(tree: app_commands.CommandTree[Any]) -> None:
@@ -26,7 +19,7 @@ def setup(tree: app_commands.CommandTree[Any]) -> None:
     async def cat(interaction: Interaction) -> None:
         await interaction.response.defer()
         try:
-            data = await _get_json("https://api.thecatapi.com/v1/images/search")
+            data = await helpers.fetch_json("https://api.thecatapi.com/v1/images/search")
             url = str(data[0]["url"])
         except Exception as error:
             logger.warning("cat fetch failed: %s", error)
@@ -38,7 +31,7 @@ def setup(tree: app_commands.CommandTree[Any]) -> None:
     async def dog(interaction: Interaction) -> None:
         await interaction.response.defer()
         try:
-            data = await _get_json("https://dog.ceo/api/breeds/image/random")
+            data = await helpers.fetch_json("https://dog.ceo/api/breeds/image/random")
             url = str(data["message"])
         except Exception as error:
             logger.warning("dog fetch failed: %s", error)

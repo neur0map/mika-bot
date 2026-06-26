@@ -84,6 +84,7 @@ max-complexity = 10
 "scripts/*" = ["T20"]              # release/build scripts print progress
 "src/mika/cli/commands/honcho.py" = ["S603", "S607"]  # shells out to git + docker by design
 "src/mika/cli/commands/service.py" = ["S603", "S607"]  # shells out to systemctl by design
+"dev-testing/**" = ["S101", "PLR2004", "S311", "BLE001", "T201"]  # test harness: asserts, sample ids, broad catch, prints
 
 # ── mypy: strict typing ──────────────────────────────────────────────────────
 [tool.mypy]
@@ -97,6 +98,6 @@ exclude = ["mikabot\\(JS\\)", "build/"]
 
 # ── pytest ───────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "dev-testing"]
 asyncio_mode = "auto"
 addopts = "-q"
