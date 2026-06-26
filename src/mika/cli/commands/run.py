@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import typer
-from rich.console import Console
-
-console = Console()
+from mika.bot.client import run as run_bot
 
 
 def run() -> None:
-    """Start the Discord bot (bot subsystem pending)."""
-    console.print("[yellow]mika run[/] is not implemented yet.")
-    raise typer.Exit(1)
+    """Start the Discord bot."""
+    run_bot()

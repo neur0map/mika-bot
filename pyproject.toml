@@ -19,6 +19,7 @@ dependencies = [
     "jinja2>=3.1",            # server-rendered settings pages (frontend templates)
     "typer>=0.12",            # cli/ commands + setup wizard
     "rich>=13.7",             # wizard/CLI output
+    "ddgs>=6.0",              # keyless DuckDuckGo web search (the AI's internet tool)
 ]
 
 [project.optional-dependencies]
@@ -49,7 +50,7 @@ packages = ["src/mika"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
-extend-exclude = ["mikabot(JS)"]
+extend-exclude = ["mikabot(JS)", "userbot"]
 
 [tool.ruff.lint]
 select = [
@@ -80,6 +81,7 @@ max-complexity = 10
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004"]   # asserts + magic values are fine in tests
 "tools/hooks/*" = ["T20", "PTH", "E501", "C901", "PLR2004", "A004"]  # dev scripts: long regex tables are fine
+"scripts/*" = ["T20"]              # release/build scripts print progress
 
 # ── mypy: strict typing ──────────────────────────────────────────────────────
 [tool.mypy]

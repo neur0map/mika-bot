@@ -8,8 +8,7 @@ foundation and operator layers. Imports point downward only (../../AGENTS.md s3)
 | Domain | Package | Audience | Shipped? |
 |---|---|---|---|
 | **Server** | `bot/` (incl. `bot/features/`) | everyone in a guild (bot account) | yes - the product |
-| **User** | `userbot/` | the owner's own account (selfbot) | NO - personal, ToS-grey |
-| **AI** | `ai/llm/` + `ai/learning/` | powers both; learning is opt-in | yes (learning optional) |
+| **AI** | `ai/llm/` + `ai/learning/` | powers the bot; learning is opt-in | yes (learning optional) |
 
 ## Shared foundation & operator layers
 
@@ -21,7 +20,7 @@ foundation and operator layers. Imports point downward only (../../AGENTS.md s3)
 | `cli/` | CLI + setup wizard; the entrypoint | everything (orchestrator) |
 | `system/` | systemd / process control | core |
 
-Dependency direction: `core <- persistence <- ai <- bot`. `userbot` depends only on
-`core` + `ai/llm` and runs as a **separate process/venv** (its `discord.py-self`
-conflicts with `discord-py`). The bot must **never** import `userbot/`. Each package
-documents itself in its own README.
+Dependency direction: `core <- persistence <- ai <- bot`. The **User** domain lives
+in the top-level `userbot/` folder (a standalone selfbot in its own venv, since
+`discord.py-self` conflicts with `discord-py`); it is not part of this package and
+the bot never imports it. Each package documents itself in its own README.

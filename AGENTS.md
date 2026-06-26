@@ -69,9 +69,6 @@ src/mika/
   bot/           ── SERVER DOMAIN (bot account; compliant; shipped) ──
                  client, commands/, events/, components/, features/. → core, persistence, ai
 
-  userbot/       ── USER DOMAIN (user account; selfbot; ToS-grey; NOT shipped; separate runtime) ──
-                 client, commands/ (non-destructive only). → core, ai/llm. The bot NEVER imports this.
-
   web/           settings + overview API (FastAPI). → core, persistence. NEVER imports discord.*
   cli/           CLI + setup wizard (Typer). The orchestrator entrypoint. → everything
   system/        systemd / process control. → core
@@ -79,6 +76,7 @@ src/mika/
 frontend/        the localhost UI (templates + static). Separate from backend. No Python app logic.
 deploy/          systemd unit templates, docker, reverse-proxy config.
 tools/           dev-only: custom git hooks, scripts. Never shipped/imported by the app.
+userbot/         STANDALONE personal selfbot (separate venv, discord.py-self). NOT shipped; bot never imports it.
 tests/           mirrors src/mika/ layout.
 docs/            documentation.
 mikabot(JS)/     GITIGNORED reference material (study only).

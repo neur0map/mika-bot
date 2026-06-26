@@ -1,22 +1,45 @@
-"""Provider interface. Every LLM backend implements ChatProvider."""
+"""Provider interface and result types for the LLM layer.
+
+Messages use the OpenAI chat format (list of dicts) so tool-calling round-trips
+cleanly; higher layers build them.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+
+Message = dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
-class ChatMessage:
-    """A single message in a conversation sent to a provider."""
+class ToolCall:
+    """A function the model wants the bot to run, with raw JSON arguments."""
 
-    role: str
-    content: str
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChatResult:
+    """A provider response: final text, tool calls, or both."""
+
+    content: str | None
+    tool_calls: list[ToolCall]
 
 
 class ChatProvider(Protocol):
-    """The minimal contract every provider adapter must satisfy."""
+    """The contract every LLM backend implements."""
 
-    async def complete(self, messages: list[ChatMessage], *, model: str) -> str:
-        """Return the model's reply text for the given messages."""
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        tools: list[Message] | None = None,
+        temperature: float = 0.8,
+        max_tokens: int = 600,
+    ) -> ChatResult:
+        """Return the model's reply (text and/or tool calls) for the messages."""
         ...

@@ -1,6 +1,6 @@
 UV ?= uv
 
-.PHONY: help install setup run web lint format types test check hooks clean
+.PHONY: help install setup run web lint format types test check hooks release clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -45,3 +45,6 @@ hooks: ## Run all pre-commit hooks on every file
 clean: ## Remove caches
 	rm -rf .ruff_cache .mypy_cache .pytest_cache
 	find . -type d -name __pycache__ -not -path './mikabot(JS)/*' -prune -exec rm -rf {} +
+
+release: ## Build the customer release zip (excludes dev/secrets/userbot)
+	$(UV) run python scripts/package.py

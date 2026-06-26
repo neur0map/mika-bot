@@ -1,0 +1,4 @@
+# Personal userbot dependency. Install in a SEPARATE virtualenv from the bot:
+# discord.py-self provides the same `discord` module as discord.py and conflicts
+# with it. See main.py for setup.
+discord.py-self>=2.0

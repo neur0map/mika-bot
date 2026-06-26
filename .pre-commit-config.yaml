@@ -53,7 +53,7 @@ repos:
         name: block codename in user-facing surfaces
         entry: tools/hooks/check_persona_leak.py
         language: script
-        files: ^src/mika/(bot/(commands|components|events)|userbot/commands)/.*\.py$
+        files: ^(src/mika/bot/(commands|components|events)|userbot)/.*\.py$
 
       - id: mypy
         name: mypy (strict)

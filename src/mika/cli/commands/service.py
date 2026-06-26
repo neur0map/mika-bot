@@ -1,6 +1,9 @@
-"""`mika service`: install and control the systemd units."""
+"""`mika service`: generate a systemd unit to run the bot 24/7 on a server."""
 
 from __future__ import annotations
+
+import shutil
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -8,32 +11,37 @@ from rich.console import Console
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
 
-_PENDING = "[yellow]mika service {name}[/] is not implemented yet."
+
+def _unit() -> str:
+    runner = shutil.which("uv") or "uv"
+    return (
+        "[Unit]\n"
+        "Description=Discord bot (mika)\n"
+        "After=network-online.target\n"
+        "Wants=network-online.target\n\n"
+        "[Service]\n"
+        "Type=simple\n"
+        f"WorkingDirectory={Path.cwd()}\n"
+        f"ExecStart={runner} run mika run\n"
+        "Restart=always\n"
+        "RestartSec=10\n\n"
+        "[Install]\n"
+        "WantedBy=multi-user.target\n"
+    )
 
 
 @app.command()
 def install() -> None:
-    """Render and install the systemd units."""
-    console.print(_PENDING.format(name="install"))
-    raise typer.Exit(1)
-
-
-@app.command()
-def start() -> None:
-    """Start the bot service."""
-    console.print(_PENDING.format(name="start"))
-    raise typer.Exit(1)
-
-
-@app.command()
-def stop() -> None:
-    """Stop the bot service."""
-    console.print(_PENDING.format(name="stop"))
-    raise typer.Exit(1)
+    """Print a systemd unit (lets the bot run 24/7) and how to install it."""
+    console.print(_unit())
+    console.print(
+        "[bold]To install:[/] save the text above as /etc/systemd/system/mika.service, then run:"
+    )
+    console.print("  sudo systemctl daemon-reload && sudo systemctl enable --now mika")
 
 
 @app.command()
 def status() -> None:
-    """Show service status."""
-    console.print(_PENDING.format(name="status"))
-    raise typer.Exit(1)
+    """Show how to check the running service."""
+    console.print("Check it with: [bold]systemctl status mika[/]")
+    console.print("Follow logs with: [bold]journalctl -u mika -f[/]")

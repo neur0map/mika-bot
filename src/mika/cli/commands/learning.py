@@ -1,4 +1,4 @@
-"""`mika learning`: control the optional self-learning system."""
+"""`mika learning`: the optional self-learning system."""
 
 from __future__ import annotations
 
@@ -11,13 +11,6 @@ console = Console()
 
 @app.command()
 def status() -> None:
-    """Show whether self-learning is enabled and its recent activity."""
-    console.print("[yellow]mika learning status[/] is not implemented yet.")
-    raise typer.Exit(1)
-
-
-@app.command()
-def reflect() -> None:
-    """Run a self-improvement reflection pass now."""
-    console.print("[yellow]mika learning reflect[/] is not implemented yet.")
-    raise typer.Exit(1)
+    """Show the self-learning status."""
+    console.print("Self-learning is scaffolded but not active in this build.")
+    console.print("The bot already remembers via local + Honcho memory - check `mika doctor`.")

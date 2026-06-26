@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import typer
 
+from mika.cli.commands import chat as chat_cmd
+from mika.cli.commands import doctor as doctor_cmd
 from mika.cli.commands import run as run_cmd
 from mika.cli.commands import setup as setup_cmd
 from mika.cli.commands import web as web_cmd
@@ -14,16 +16,16 @@ from mika.cli.commands.userbot import app as userbot_app
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
-    help="Mika - control the bot, the web UI, and the system services.",
+    help="Your all-purpose Discord bot + AI.",
 )
-app.command("run")(run_cmd.run)
-app.command("web")(web_cmd.web)
 app.command("setup")(setup_cmd.setup)
-app.add_typer(service_app, name="service", help="Install and control the systemd services.")
-app.add_typer(
-    userbot_app, name="userbot", help="Run the personal user-account companion (separate env)."
-)
-app.add_typer(learning_app, name="learning", help="Control the optional self-learning system.")
+app.command("run")(run_cmd.run)
+app.command("chat")(chat_cmd.chat)
+app.command("doctor")(doctor_cmd.doctor)
+app.command("web")(web_cmd.web)
+app.add_typer(service_app, name="service", help="Install/control the systemd service.")
+app.add_typer(userbot_app, name="userbot", help="Info on the personal companion (separate).")
+app.add_typer(learning_app, name="learning", help="The optional self-learning system.")
 
 
 def main() -> None:

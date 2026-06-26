@@ -1,4 +1,4 @@
-"""`mika userbot`: run the personal user-account companion."""
+"""`mika userbot`: pointer to the standalone personal companion."""
 
 from __future__ import annotations
 
@@ -10,8 +10,9 @@ console = Console()
 
 
 @app.command()
-def run() -> None:
-    """Run the user-account companion (personal, ToS-grey, separate env)."""
-    console.print("[yellow]mika userbot run[/] is not implemented yet.")
-    console.print("Requires discord.py-self in a SEPARATE venv; it conflicts with discord-py.")
-    raise typer.Exit(1)
+def info() -> None:
+    """Explain how to run the personal user-account companion."""
+    console.print("The personal companion is a [bold]separate[/] program (it uses a")
+    console.print("different Discord library that can't share this environment).")
+    console.print("Run it from the [bold]userbot/[/] folder - see [bold]userbot/README.md[/].")
+    console.print("[yellow]Note:[/] it automates a user account (ToS-grey); personal use only.")
