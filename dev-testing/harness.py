@@ -186,6 +186,7 @@ def make_guild() -> Fake:
         premium_subscription_count=0,
         create_text_channel=AsyncMock(return_value=make_channel()),
         create_role=AsyncMock(return_value=make_role()),
+        create_category=AsyncMock(return_value=make_channel()),
         create_custom_emoji=AsyncMock(),
         fetch_ban=AsyncMock(),
         bans=MagicMock(),
