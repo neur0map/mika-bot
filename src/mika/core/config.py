@@ -98,6 +98,15 @@ class PersonaSettings(BaseSettings):
     file: Path = Path("./config/persona.md")
 
 
+class MediaSettings(BaseSettings):
+    """GIF search and media-download backends."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_MEDIA_")
+
+    klipy_api_key: str = ""
+    cobalt_instance: str = "https://api.cobalt.tools"
+
+
 class Settings(BaseSettings):
     """Top-level application settings, composed from the sections above."""
 
@@ -113,6 +122,7 @@ class Settings(BaseSettings):
     tools: ToolSettings = Field(default_factory=ToolSettings)
     web: WebSettings = Field(default_factory=WebSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
+    media: MediaSettings = Field(default_factory=MediaSettings)
 
 
 @lru_cache(maxsize=1)

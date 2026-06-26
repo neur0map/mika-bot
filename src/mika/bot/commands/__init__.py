@@ -14,11 +14,13 @@ from mika.bot.commands import (
     anime,
     antispam,
     basic,
+    cobalt,
     convert,
     devtools,
     extra,
     fun,
     games,
+    gif,
     giveaways,
     imagegen,
     images,
@@ -72,6 +74,8 @@ _GROUPS = (
     ("nsfw", "Age-gated images (NSFW channels only).", (nsfw.setup,)),
     ("anim", "Animated messages.", (animated.setup,)),
     ("presence", "Set the bot's status (admin).", (presence.setup,)),
+    ("gif", "Search GIFs, stickers and clips.", (gif.setup,)),
+    ("download", "Download media from a link.", (cobalt.setup,)),
 )
 
 
