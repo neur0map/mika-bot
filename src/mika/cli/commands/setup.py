@@ -42,6 +42,15 @@ def setup() -> None:
         )
     if Confirm.ask("Pick one channel where the bot chats without being @mentioned?", default=False):
         answers["DISCORD_RESPONSE_CHANNEL_IDS"] = Prompt.ask("  Channel ID", default="")
+    if Confirm.ask(
+        "Enable long-term memory (Honcho)? Needs Docker; you can add it later instead.",
+        default=False,
+    ):
+        answers["MIKA_MEMORY_HONCHO_ENABLED"] = "true"
+        slug = re.sub(r"[^a-z0-9_-]", "-", answers["MIKA_PERSONA_NAME"].lower()) or "bot"
+        answers["MIKA_MEMORY_HONCHO_WORKSPACE"] = slug
+        answers["MIKA_MEMORY_HONCHO_SESSION"] = "main"
+        console.print("  [dim]After setup, run[/] [bold]mika honcho up[/] [dim]to start it.[/]")
 
     _summary(answers)
     if not Confirm.ask("Save this to .env?", default=True):

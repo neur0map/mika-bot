@@ -1,39 +1,46 @@
 # Optional: long-term memory with Honcho
 
-Your bot already remembers recent conversation out of the box (its built-in local
-memory). **Honcho** is an optional upgrade that adds *semantic* long-term memory —
-it remembers people and facts across sessions and recalls what's relevant. It's
-off by default because it needs Docker.
+Your bot already remembers recent conversation out of the box (built-in local
+memory). **Honcho** adds *semantic*, cross-session memory — it remembers people
+and facts over time. It's optional and needs **Docker**. Skip it if you're not
+sure; everything else works without it.
 
-You only need this if you want deeper, cross-session memory. Skip it otherwise;
-everything else works without it.
+## Easiest: let the bot set it up for you
 
-## 1. Run Honcho (needs Docker)
+With Docker installed, one command fetches, builds, and starts Honcho:
+
+```
+mika honcho up
+```
+
+The first run downloads and builds it (a few minutes); after that it's instant.
+Then make sure it's enabled — either you answered **yes** to the Honcho question
+during `mika setup`, or run `mika setup` again and choose yes.
+
+Check it worked:
+
+```
+mika doctor      # the "Honcho memory" row should say PASS
+```
+
+Stop it anytime with `mika honcho down`, check it with `mika honcho status`.
+
+## Manual setup (if you'd rather)
 
 ```bash
 git clone https://github.com/plastic-labs/honcho
-cd honcho
-cp .env.example .env        # open .env and set LLM_OPENAI_API_KEY
-docker compose up -d        # serves on http://127.0.0.1:8000
+cd honcho && cp docker-compose.yml.example docker-compose.yml
+cp .env.example .env        # set LLM_OPENAI_API_KEY
+docker compose up -d --build
 ```
 
-## 2. Turn it on for the bot
+Then set in your bot's `.env`: `MIKA_MEMORY_HONCHO_ENABLED=true` and
+`MIKA_MEMORY_HONCHO_BASE_URL=http://127.0.0.1:8000`.
 
-Add these to your `.env` (in the bot folder), then restart the bot:
+## Good to know
 
-```
-MIKA_MEMORY_HONCHO_ENABLED=true
-MIKA_MEMORY_HONCHO_BASE_URL=http://127.0.0.1:8000
-MIKA_MEMORY_HONCHO_WORKSPACE=my-bot
-MIKA_MEMORY_HONCHO_SESSION=main
-```
-
-## 3. Check it
-
-```
-mika doctor
-```
-
-The **Honcho memory** row should say **PASS**. From then on the AI blends Honcho
-recall into its replies. If Honcho is ever down, the bot automatically falls back
-to local memory — it never breaks your bot.
+- If Honcho is ever down, the bot **automatically falls back** to local memory —
+  it never breaks your bot.
+- Honcho's memory engine needs its own LLM key; `mika honcho up` reuses your bot's
+  key. If you use a non-OpenAI provider and see derivation errors, adjust the
+  provider settings in `var/honcho/.env`.

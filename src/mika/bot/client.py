@@ -48,4 +48,13 @@ def run() -> None:
         raise SystemExit("DISCORD_TOKEN is not set. Run `mika setup` first.")
     bot = BotApp()
     register_events(bot)
-    bot.run(token, log_handler=None)
+    try:
+        bot.run(token, log_handler=None)
+    except discord.PrivilegedIntentsRequired as error:
+        raise SystemExit(
+            "Discord rejected the bot: a required intent is OFF.\n"
+            "Fix: Developer Portal -> your app -> Bot -> Privileged Gateway Intents ->\n"
+            "turn ON 'MESSAGE CONTENT INTENT', save, then run `mika run` again."
+        ) from error
+    except discord.LoginFailure as error:
+        raise SystemExit("Discord rejected the token. Re-check it with `mika setup`.") from error

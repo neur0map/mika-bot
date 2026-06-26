@@ -21,26 +21,41 @@ def doctor() -> None:
     asyncio.run(_run())
 
 
+async def _check_discord() -> tuple[bool, str]:
+    token = get_settings().discord.token
+    if not token or token == "CHANGEME":  # noqa: S105
+        return False, "no token (run mika setup)"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                "https://discord.com/api/v10/users/@me",
+                headers={"Authorization": f"Bot {token}"},
+            )
+    except Exception as error:
+        return False, str(error)[:50]
+    if response.is_error:
+        return False, f"token rejected ({response.status_code}) - recheck it"
+    return True, f"this token = bot '{response.json().get('username', '?')}'"
+
+
 async def _check_db() -> tuple[bool, str]:
     try:
         await init_db()
     except Exception as error:
-        return False, str(error)
+        return False, str(error)[:50]
     return True, "local memory ready"
 
 
 async def _check_llm() -> tuple[bool, str]:
     llm = get_settings().llm
     if not llm.api_key or llm.api_key == "CHANGEME":
-        return False, "MIKA_LLM_API_KEY not set (run mika setup)"
+        return False, "no API key (run mika setup)"
     try:
         provider = OpenAICompatibleProvider(base_url=llm.base_url, api_key=llm.api_key)
-        result = await provider.complete(
-            [{"role": "user", "content": "reply with ok"}], model=llm.model, max_tokens=5
-        )
+        await provider.complete([{"role": "user", "content": "ok"}], model=llm.model, max_tokens=16)
     except Exception as error:
-        return False, f"{type(error).__name__}: {error}"
-    return result.content is not None, f"model {llm.model} responded"
+        return False, f"{type(error).__name__}: {str(error)[:45]}"
+    return True, f"{llm.model} reachable"
 
 
 async def _check_web() -> tuple[bool, str]:
@@ -48,7 +63,7 @@ async def _check_web() -> tuple[bool, str]:
         return True, "disabled"
     output = await web_search_tool().handler({"query": "weather today"})
     ok = not output.startswith("error") and "unavailable" not in output
-    return ok, "results returned" if ok else output[:60]
+    return ok, "results returned" if ok else output[:50]
 
 
 async def _check_honcho() -> tuple[bool, str]:
@@ -58,16 +73,14 @@ async def _check_honcho() -> tuple[bool, str]:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(f"{memory.honcho_base_url}/health")
-    except Exception as error:
-        return False, str(error)
+    except Exception:
+        return False, "not reachable (run mika honcho up)"
     return not response.is_error, f"honcho responded {response.status_code}"
 
 
 async def _run() -> None:
-    discord = get_settings().discord
-    token_ok = bool(discord.token) and discord.token != "CHANGEME"  # noqa: S105
     rows: list[tuple[str, str, bool, str]] = [
-        ("L2", "Discord token", token_ok, "set" if token_ok else "run mika setup"),
+        ("L2", "Discord token", *await _check_discord()),
         ("L3", "Memory (database)", *await _check_db()),
         ("L3", "AI / LLM", *await _check_llm()),
         ("L3", "Honcho memory", *await _check_honcho()),

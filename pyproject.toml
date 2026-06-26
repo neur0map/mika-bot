@@ -82,6 +82,7 @@ max-complexity = 10
 "tests/**" = ["S101", "PLR2004"]   # asserts + magic values are fine in tests
 "tools/hooks/*" = ["T20", "PTH", "E501", "C901", "PLR2004", "A004"]  # dev scripts: long regex tables are fine
 "scripts/*" = ["T20"]              # release/build scripts print progress
+"src/mika/cli/commands/honcho.py" = ["S603", "S607"]  # shells out to git + docker by design
 
 # ── mypy: strict typing ──────────────────────────────────────────────────────
 [tool.mypy]
