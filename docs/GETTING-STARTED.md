@@ -75,6 +75,8 @@ This usually takes 1–3 minutes depending on your internet. If it asks for your
 
 **If it errors out:** scroll up, read the last few red lines, and check that you have an internet connection. Running `./install.sh` again is safe.
 
+> **About the `mika` command:** the installer sets up a `mika` command you can run from any terminal in this folder — that's why the steps below are just `mika chat`, `mika run`, and so on (no `uv` or anything fancy). If a later step ever says `mika: command not found`, simply close the terminal and open a fresh one in the Mika folder (Step 1), then carry on — a new terminal picks up the command.
+
 ---
 
 ## Step 3 — The setup wizard
@@ -149,7 +151,30 @@ You'll see a few startup messages and then a line like **"Logged in as YourBotNa
 
 **Keep this terminal window open.** As long as it's running, the bot is online. If you close the window or shut down your computer, the bot goes offline. To stop it on purpose, click on the terminal and press **Ctrl+C**.
 
-> **Want it online 24/7?** Once you're comfortable, you can run Mika on a cheap VPS (a small always-on server you rent, usually $4–6 a month from providers like Hetzner, DigitalOcean, or Vultr). The setup is identical to what you just did — unzip on the VPS, `./install.sh`, `mika setup`, `mika run`. That's a project for another day; for now, your laptop is fine.
+> **Want it online 24/7?** That's exactly what **Step 7** below is for. For a server that never sleeps, rent a cheap VPS ($4–6/mo from Hetzner, DigitalOcean, or Vultr) and do the same things there: unzip, `./install.sh`, `mika setup`, then `mika service install`.
+
+
+## Step 7 — Keep it running 24/7 (the real way)
+
+`mika run` is perfect for testing, but it ties up your terminal and the bot stops the moment you close the window. For real, always-on use, run this **once**:
+
+```
+mika service install
+```
+
+That installs Mika as a background **service**. It starts right away, keeps running after you close the terminal, and comes back on its own if the computer (or VPS) reboots. You get your terminal back immediately.
+
+Manage it anytime:
+
+| Command | What it does |
+|---------|-----------------------------------------------|
+| `mika service status` | Is it running right now? |
+| `mika logs` | See what the bot has been doing |
+| `mika service stop` | Stop the bot |
+| `mika service restart` | Restart it (after changing settings via `mika setup`) |
+| `mika service uninstall` | Remove the background service entirely |
+
+> On a rented VPS you're usually logged in as **root**, so `mika service install` sets up a system-wide service that survives reboots. On your own laptop it installs a personal one — no admin password needed. Either way, it's the same one command.
 
 ---
 

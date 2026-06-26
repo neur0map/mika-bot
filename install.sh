@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # One-command installer for the bot (for end users).
 # Installs the uv toolchain if missing, installs the bot's dependencies, ensures a
-# .env exists, then launches the friendly setup wizard. No developer tooling.
+# .env exists, creates a global `mika` command, then launches the setup wizard.
 set -euo pipefail
 cd "$(dirname "$0")"
+ROOT="$(pwd)"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
@@ -18,9 +19,36 @@ uv sync --no-dev
 
 [ -f .env ] || cp .env.example .env
 
+# Create a global `mika` command so the bot runs without uv or activating a venv.
+# It cd's into this folder first, so your .env and data are always found.
+BIN_DIR="$HOME/.local/bin"
+mkdir -p "$BIN_DIR"
+cat > "$BIN_DIR/mika" <<LAUNCHER
+#!/usr/bin/env bash
+cd "$ROOT" || exit 1
+exec "$ROOT/.venv/bin/mika" "\$@"
+LAUNCHER
+chmod +x "$BIN_DIR/mika"
+say "Installed the 'mika' command to $BIN_DIR/mika"
+
+# Make sure ~/.local/bin is on PATH for future terminals.
+case ":${PATH}:" in
+    *":$BIN_DIR:"*) ;;
+    *)
+        export PATH="$BIN_DIR:$PATH"
+        for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+            [ -f "$rc" ] || continue
+            grep -q 'added by mika installer' "$rc" 2>/dev/null && continue
+            printf '\n# added by mika installer\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
+        done
+        say "Added $BIN_DIR to your PATH - open a new terminal once setup finishes."
+        ;;
+esac
+
 say "Starting the setup wizard..."
-uv run mika setup
+"$BIN_DIR/mika" setup
 
 echo
-say "Done! Test it with:  make chat   (or: uv run mika chat \"hello\")"
-say "Then start it with:  make run    (or: uv run mika run)"
+say "Done! Quick test:        mika chat \"hello\""
+say "Run it (testing):        mika run"
+say "Run it 24/7 (real use):  mika service install"
