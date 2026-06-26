@@ -10,6 +10,8 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from mika.core.config import get_settings
+
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
 
@@ -102,8 +104,12 @@ def install(
         _systemctl(["daemon-reload"], user_mode=False)
         _systemctl(["enable", "--now", UNIT], user_mode=False)
         console.print(f"[green]Installed[/] background service (system) -> {_SYSTEM_PATH}")
+    web = get_settings().web
+    panel = (
+        f"\nDashboard runs with it at [bold]http://{web.host}:{web.port}[/]" if web.enabled else ""
+    )
     console.print(
-        "The bot now runs in the background and restarts on reboot.\n"
+        "The bot now runs in the background and restarts on reboot." + panel + "\n"
         "Check: [bold]mika service status[/]   Logs: [bold]mika logs[/]   "
         "Stop: [bold]mika service stop[/]"
     )

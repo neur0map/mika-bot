@@ -11,7 +11,7 @@ Built in Python, designed to run on a Linux VPS under systemd.
 
 ![Mika dashboard](docs/screenshots/dashboard.png)
 
-*The localhost dashboard (`mika web`): 340+ commands across 33 groups, at a glance.*
+*The dashboard (`mika web`, or served automatically by the bot/service): 340+ commands across 33 groups.*
 
 ---
 
@@ -46,6 +46,24 @@ make run
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Run 24/7 — on the host or in Docker |
 | [docs/EXPOSE.md](docs/EXPOSE.md) | Open the dashboard to the internet safely (Tailscale/Cloudflare) |
 | [docs/HONCHO-MEMORY.md](docs/HONCHO-MEMORY.md) | Optional long-term semantic memory |
+
+## Screenshots
+
+**Setup wizard** — `mika setup` (no file editing; masks secrets)
+
+![setup wizard](docs/screenshots/setup.png)
+
+**Health check** — `mika doctor` (verifies token, AI, memory, web search)
+
+![doctor](docs/screenshots/doctor.png)
+
+**AI chat from the terminal** — `mika chat` (test the brain without Discord)
+
+![chat](docs/screenshots/chat.png)
+
+**Command-line interface** — `mika --help`
+
+![help](docs/screenshots/help.png)
 
 ## What goes where
 

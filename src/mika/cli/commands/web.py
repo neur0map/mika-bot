@@ -11,7 +11,11 @@ console = Console()
 
 
 def web() -> None:
-    """Serve the localhost overview page."""
+    """Serve the dashboard on its own (the bot already serves it while running)."""
     settings = get_settings().web
-    console.print(f"overview at [bold]http://{settings.host}:{settings.port}[/] (ctrl-c to stop)")
+    console.print(
+        f"dashboard at [bold]http://{settings.host}:{settings.port}[/] (ctrl-c to stop)\n"
+        "[dim]note: `mika run` and the service already serve this - use this only "
+        "to view the panel without the bot.[/]"
+    )
     uvicorn.run("mika.web.app:create_app", host=settings.host, port=settings.port, factory=True)

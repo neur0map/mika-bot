@@ -17,6 +17,10 @@ mika service stop      # stop it
 On a server you're logged into as root, this installs a system service. On your own
 laptop it installs a personal one (no admin password needed). That's the whole story.
 
+The **dashboard runs with the bot** - once the service is up, the panel is live at
+`http://127.0.0.1:8080` (no separate process, terminal stays free). `mika web` is only
+for viewing the panel on its own. See [EXPOSE.md](EXPOSE.md) to reach it remotely.
+
 ## Option B - In a container (Docker)
 
 Good if you already use Docker or want the bot isolated from the rest of the system.
