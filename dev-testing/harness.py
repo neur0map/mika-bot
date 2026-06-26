@@ -166,6 +166,7 @@ def make_channel(cid: int = 10, name: str = "general", *, nsfw: bool = False) ->
         purge=AsyncMock(return_value=[1, 2, 3]),
         edit=AsyncMock(),
         set_permissions=AsyncMock(),
+        delete=AsyncMock(),
     )
 
 
