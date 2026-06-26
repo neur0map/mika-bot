@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 INCLUDE_FILES = (
     "install.sh",
+    "Dockerfile",
+    "docker-compose.yml",
+    ".dockerignore",
     "pyproject.toml",
     "uv.lock",
     ".python-version",

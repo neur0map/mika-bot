@@ -1,0 +1,10 @@
+# Run the bot in the background with Docker. Configure via .env (run `mika setup`
+# once, or copy .env.example to .env and fill it in), then: docker compose up -d
+services:
+  mika:
+    build: .
+    container_name: mika
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./var:/app/var # conversation memory + logs persist across restarts

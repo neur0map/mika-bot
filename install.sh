@@ -8,6 +8,18 @@ ROOT="$(pwd)"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
+# --- check prerequisites -----------------------------------------------------
+if ! command -v curl >/dev/null 2>&1; then
+    echo "This installer needs 'curl'. Install it first (e.g. 'sudo apt install curl'), then re-run." >&2
+    exit 1
+fi
+command -v git >/dev/null 2>&1 || say "Note: 'git' isn't installed - recommended for updates, but not required."
+if command -v docker >/dev/null 2>&1; then
+    say "Docker detected - optional long-term memory (Honcho) is available. See docs/HONCHO-MEMORY.md."
+else
+    say "Docker not found - the bot runs fine without it. Install Docker later only if you want Honcho memory."
+fi
+
 if ! command -v uv >/dev/null 2>&1; then
     say "Installing uv (the Python toolchain)..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
