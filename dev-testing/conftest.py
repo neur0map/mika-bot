@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+_TEST_DB = Path("/tmp/mika-devtest.sqlite3")
+_TEST_DB.unlink(missing_ok=True)
+os.environ["MIKA_DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
+
 sys.path.insert(0, str(Path(__file__).parent))
 
-from mika.bot.commands import helpers
+from mika.bot.commands import helpers  # noqa: E402
 
 _PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"

@@ -87,7 +87,7 @@ max-complexity = 10
 "scripts/*" = ["T20"]              # release/build scripts print progress
 "src/mika/cli/commands/honcho.py" = ["S603", "S607"]  # shells out to git + docker by design
 "src/mika/cli/commands/service.py" = ["S603", "S607"]  # shells out to systemctl by design
-"dev-testing/**" = ["S101", "PLR2004", "S311", "BLE001", "T201", "PLC0415", "S106"]  # test harness: asserts, sample ids, broad catch, prints, local imports, sample tokens
+"dev-testing/**" = ["S101", "PLR2004", "S311", "BLE001", "T201", "PLC0415", "S106", "S108"]  # test infra: asserts, ids, broad catch, prints, local imports, sample tokens, tmp db
 "src/mika/bot/commands/*.py" = ["C901", "PLR0915", "PLR0911", "PLR0912", "PLR2004", "PLC0415", "S106", "S112"]  # declarative command registries: one big setup() per file
 
 # ── mypy: strict typing ──────────────────────────────────────────────────────

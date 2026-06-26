@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mika.persistence.repositories.config import ConfigRepository
 from mika.persistence.repositories.messages import MessageRepository
 
-__all__ = ["MessageRepository"]
+__all__ = ["ConfigRepository", "MessageRepository"]

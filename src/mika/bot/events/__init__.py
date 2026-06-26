@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mika.bot.events import message, ready
+from mika.bot.events import members, message, ready
 
 if TYPE_CHECKING:
     from mika.bot.client import BotApp
@@ -16,3 +16,4 @@ def register_events(bot: BotApp) -> None:
     """Attach every event handler to the bot."""
     ready.setup(bot)
     message.setup(bot)
+    members.setup(bot)
