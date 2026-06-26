@@ -6,12 +6,14 @@ from typing import Any
 
 import pytest
 from discord import app_commands
-from harness import build_tree, invoke
+from harness import invoke, tree_for
+
+from mika.bot.commands import text
 
 
 @pytest.fixture(scope="module")
 def tree() -> app_commands.CommandTree[Any]:
-    return build_tree()
+    return tree_for(text.setup)
 
 
 async def test_reverse(tree: app_commands.CommandTree[Any]) -> None:

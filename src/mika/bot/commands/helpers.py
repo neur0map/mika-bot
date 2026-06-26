@@ -81,6 +81,12 @@ def is_nsfw(interaction: discord.Interaction) -> bool:
     return bool(checker()) if callable(checker) else False
 
 
+def has_perms(interaction: discord.Interaction, *names: str) -> bool:
+    """True if the caller holds all the named guild permissions."""
+    perms = getattr(interaction.user, "guild_permissions", None)
+    return perms is not None and all(getattr(perms, name, False) for name in names)
+
+
 def clip(text: str, limit: int = MAX_REPLY) -> str:
     """Trim text to fit one Discord message."""
     return text if len(text) <= limit else text[: limit - 1] + "\u2026"

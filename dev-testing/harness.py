@@ -189,6 +189,9 @@ def make_guild() -> Fake:
         create_custom_emoji=AsyncMock(),
         fetch_ban=AsyncMock(),
         bans=MagicMock(),
+        ban=AsyncMock(),
+        kick=AsyncMock(),
+        unban=AsyncMock(),
     )
 
 
@@ -253,10 +256,15 @@ def _find(
 
 
 async def invoke(
-    tree: app_commands.CommandTree[Any], name: str, *, interaction: Any = None, **kwargs: Any
+    tree: app_commands.CommandTree[Any],
+    qualified: str,
+    /,
+    *,
+    interaction: Any = None,
+    **kwargs: Any,
 ) -> Sent:
     """Run a command by its qualified name and return what it sent."""
-    cmd = _find(tree, name)
+    cmd = _find(tree, qualified)
     inter = interaction or make_interaction()
     await cmd.callback(inter, **kwargs)
     return inter._sent
