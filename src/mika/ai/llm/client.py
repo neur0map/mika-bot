@@ -98,7 +98,7 @@ class LLMClient:
             logger.error("fallback provider failed: %s", fallback_error)
             return _BUSY_REPLY
 
-    async def summarize(self, instruction: str, content: str) -> str:
+    async def summarize(self, instruction: str, content: str, *, model: str | None = None) -> str:
         """One-shot completion with no memory or tools (used by self-reflection)."""
         messages: list[Message] = [
             {"role": "system", "content": instruction},
@@ -106,7 +106,7 @@ class LLMClient:
         ]
         try:
             result = await self._provider.complete(
-                messages, model=self._settings.llm.model, max_tokens=400
+                messages, model=model or self._settings.llm.model, max_tokens=600
             )
             return result.content or ""
         except Exception as error:

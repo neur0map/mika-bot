@@ -41,3 +41,8 @@ async def test_non_admin_set_denied(tree: app_commands.CommandTree[Any]) -> None
     inter = make_interaction(user=make_member(admin=False))
     sent = await invoke(tree, "set", interaction=inter, name="friendly")
     assert "manage server" in sent.text.lower()
+
+
+async def test_create_generates(tree: app_commands.CommandTree[Any]) -> None:
+    sent = await invoke(tree, "create", name="Robo", description="a sci-fi robot")
+    assert "robo" in sent.text.lower()
