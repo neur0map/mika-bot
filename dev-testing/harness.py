@@ -204,6 +204,7 @@ def make_bot(user: Fake, guild: Fake) -> Fake:
         application_id=123456789,
         llm=Fake(reply=AsyncMock(return_value="ai reply")),
         get_guild=MagicMock(return_value=guild),
+        change_presence=AsyncMock(),
     )
 
 

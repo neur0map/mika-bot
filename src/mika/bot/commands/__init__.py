@@ -24,6 +24,7 @@ from mika.bot.commands import (
     moderation,
     novelty,
     nsfw,
+    presence,
     search,
     social,
     text,
@@ -50,6 +51,7 @@ _GROUPS = (
     ("admin", "Server admin: emojis and templates.", (admin.setup,)),
     ("nsfw", "Age-gated images (NSFW channels only).", (nsfw.setup,)),
     ("anim", "Animated messages.", (animated.setup,)),
+    ("presence", "Set the bot's status (admin).", (presence.setup,)),
 )
 
 
