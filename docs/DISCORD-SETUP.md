@@ -115,6 +115,20 @@ Now you can copy IDs:
 
 If "Copy ID" doesn't appear in the right-click menu, Developer Mode isn't on yet. Go back to step 4 above.
 
+**Still no "Copy Server ID"? Use the no-Developer-Mode fallback.** Open Discord in
+a web browser (or read your desktop window's address bar), click into your server,
+and look at the URL:
+
+```
+discord.com/channels/1234567890/9876543210
+                     ^Server ID   ^Channel ID
+```
+
+The **first** number after `/channels/` is your **Server ID**; the **second** is a
+**Channel ID**. Two reminders: right-click the **server itself** (its icon or its
+name at the top), not a channel or empty space — and the Developer Mode toggle is
+under **Advanced**, not Appearance.
+
 ---
 
 ## Summary — what each value is for
