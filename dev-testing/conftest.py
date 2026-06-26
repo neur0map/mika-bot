@@ -14,6 +14,14 @@ _TEST_DB.unlink(missing_ok=True)
 os.environ["MIKA_DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
 os.environ["MIKA_PERSONA_FILE"] = "/tmp/mika-devtest-persona.md"
 
+# Point config + the env writer at a throwaway .env so tests never touch the real one.
+_TEST_ENV = Path("/tmp/mika-devtest.env")
+_EXAMPLE = Path(".env.example")
+_TEST_ENV.write_text(
+    _EXAMPLE.read_text(encoding="utf-8") if _EXAMPLE.exists() else "", encoding="utf-8"
+)
+os.environ["MIKA_DOTENV"] = str(_TEST_ENV)
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from mika.bot.commands import helpers  # noqa: E402

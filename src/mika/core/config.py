@@ -5,11 +5,14 @@ All tunables flow through here; nothing else should read os.environ directly.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = os.environ.get("MIKA_DOTENV", ".env")  # overridable for tests / custom installs
 
 
 def _csv(value: str) -> list[str]:
@@ -19,7 +22,7 @@ def _csv(value: str) -> list[str]:
 class DiscordSettings(BaseSettings):
     """Discord bot credentials and where the bot is allowed to operate."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="DISCORD_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="DISCORD_")
 
     token: str = ""
     client_id: str = ""
@@ -40,7 +43,7 @@ class DiscordSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     """Primary and fallback LLM provider configuration (OpenAI-compatible)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_LLM_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_LLM_")
 
     provider: str = "openrouter"
     base_url: str = "https://openrouter.ai/api/v1"
@@ -60,7 +63,7 @@ class LLMSettings(BaseSettings):
 class MemorySettings(BaseSettings):
     """Conversation memory: a local recent-window plus optional Honcho recall."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_MEMORY_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_MEMORY_")
 
     recent_window: int = 20
     honcho_enabled: bool = False
@@ -72,7 +75,7 @@ class MemorySettings(BaseSettings):
 class ToolSettings(BaseSettings):
     """LLM tool access (the bot's window onto the internet)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_TOOLS_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_TOOLS_")
 
     web_search_enabled: bool = True
     web_search_max_results: int = 4
@@ -82,18 +85,22 @@ class ToolSettings(BaseSettings):
 class WebSettings(BaseSettings):
     """Localhost settings / overview web server."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_WEB_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_WEB_")
 
     enabled: bool = True
     host: str = "127.0.0.1"
     port: int = 8080
     secret: str = ""
+    email: str = ""
+    password: str = ""
 
 
 class PersonaSettings(BaseSettings):
     """The bot's user-facing identity. The only place its name/persona is defined."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_PERSONA_")
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_PERSONA_"
+    )
 
     name: str = "Mika"
     file: Path = Path("./config/persona.md")
@@ -102,7 +109,7 @@ class PersonaSettings(BaseSettings):
 class MediaSettings(BaseSettings):
     """GIF search and media-download backends."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_MEDIA_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_MEDIA_")
 
     klipy_api_key: str = ""
     cobalt_instance: str = "https://api.cobalt.tools"
@@ -111,7 +118,7 @@ class MediaSettings(BaseSettings):
 class Settings(BaseSettings):
     """Top-level application settings, composed from the sections above."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="MIKA_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_")
 
     env: str = "production"
     log_level: str = "info"

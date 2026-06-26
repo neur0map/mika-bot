@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+<div class="h"><span class="n">03</span><h2>Personas</h2><span class="rule"></span></div>
+{% if message %}<div class="banner ok">{{ message }}</div>{% endif %}
+{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
+<p class="lede">Switch personality instantly (memory is always kept), or build a brand-new one. The active persona shapes how the bot talks everywhere.</p>
+<div class="idx">
+{% for p in personas %}
+<div class="pcard">
+<div class="pn"><span><b>{{ p.name }}</b></span>{% if p.active %}<span class="tag active">active</span>{% endif %}</div>
+<div class="pd">{{ p.summary }}</div>
+{% if not p.active %}<form method="post" action="/personas/activate"><input type="hidden" name="name" value="{{ p.name }}"><button type="submit">Use this</button></form>{% endif %}
+</div>
+{% endfor %}
+</div>
+</section>
+<section>
+<div class="h"><span class="n">04</span><h2>Build a persona</h2><span class="rule"></span></div>
+<p class="lede">Bring any <b>famous person or fictional character</b> to life - the bot captures their voice, mannerisms and signature phrases. Generation takes a few seconds.</p>
+<div class="build">
+<form method="post" action="/personas/create">
+<div class="field"><label for="pname">Character</label><input type="text" id="pname" name="name" placeholder="e.g. Sherlock Holmes, Tony Stark, Yoda" required><div class="help">A well-known person or fictional character works best.</div></div>
+<div class="field"><label for="pnotes">Notes (optional)</label><textarea id="pnotes" name="notes" placeholder="Any quirks, era, or tone to emphasize..."></textarea></div>
+<button type="submit">Build persona</button>
+</form>
+</div>
+</section>
+{% endblock %}

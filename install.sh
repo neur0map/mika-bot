@@ -60,7 +60,17 @@ esac
 say "Starting the setup wizard..."
 "$BIN_DIR/mika" setup
 
+# If setup wrote a token, offer to bring the bot + dashboard up as a background service.
 echo
-say "Done! Quick test:        mika chat \"hello\""
-say "Run it (testing):        mika run"
-say "Run it 24/7 (real use):  mika service install"
+if grep -qE '^DISCORD_TOKEN=.+' .env 2>/dev/null && ! grep -qE '^DISCORD_TOKEN=(CHANGEME)?$' .env; then
+    read -r -p "$(printf '\033[1;36m==>\033[0m Start the bot + dashboard now in the background? [Y/n] ')" reply
+    case "$reply" in
+        [Nn]*) say "Skipped. Start later with: mika service install" ;;
+        *) "$BIN_DIR/mika" service install ;;
+    esac
+fi
+
+echo
+say "Test the AI:        mika chat \"hello\""
+say "Run in foreground: mika run"
+say "Open the dashboard at the URL the wizard printed and log in."

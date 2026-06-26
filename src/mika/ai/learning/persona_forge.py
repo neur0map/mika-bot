@@ -8,9 +8,12 @@ their own main chat model. Generated personas are saved alongside the bundled pr
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mika.core.config import get_settings
+from mika.core.env_file import write_env
 from mika.core.logging import get_logger
 from mika.core.paths import data_dir
 
@@ -21,10 +24,11 @@ logger = get_logger(__name__)
 
 PRESET_CREATOR_MODEL = "anthropic/claude-3.5-sonnet"
 _ARCHITECT = (
-    "You are a persona architect for a chat bot. Given a name and a description, write a "
-    "persona file in markdown with these sections: '# Persona', '## Identity', '## Tone', "
-    "'## Boundaries'. Make it characterful but tight. Never name a specific AI model or "
-    "provider. Output only the markdown."
+    "You are a persona architect for a chat bot. Given a NAME (often a famous person or "
+    "fictional character) and optional notes, write a persona file in markdown with these "
+    "sections: '# Persona', '## Identity', '## Tone', '## Boundaries'. If the name is a known "
+    "character, capture their voice, mannerisms and signature phrases faithfully. Keep it "
+    "tight and characterful. Never name a specific AI model or provider. Output only markdown."
 )
 _FALLBACK = (
     "# Persona\n\n## Identity\nA friendly, helpful companion.\n\n"
@@ -54,3 +58,40 @@ async def forge_persona(client: LLMClient, name: str, description: str) -> Path:
     path.write_text(text.strip() or _FALLBACK, encoding="utf-8")
     logger.info("generated persona %s", path.name)
     return path
+
+
+_BUNDLED = Path("config/personas")
+
+
+def all_personas() -> dict[str, Path]:
+    """Bundled presets plus generated personas, keyed by name."""
+    found: dict[str, Path] = {}
+    for directory in (_BUNDLED, user_personas_dir()):
+        if directory.is_dir():
+            for path in sorted(directory.glob("*.md")):
+                found[path.stem] = path
+    return found
+
+
+def persona_summary(path: Path) -> str:
+    """A one-line description: the first line under the '## Identity' heading."""
+    capture = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("## identity"):
+            capture = True
+        elif capture and stripped and not stripped.startswith("#"):
+            return stripped
+    return "A custom personality."
+
+
+def activate(name: str) -> bool:
+    """Make a persona the active one (copy it into place, record the name). Instant."""
+    source = all_personas().get(name.lower())
+    if source is None:
+        return False
+    target = get_settings().persona.file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    write_env({"MIKA_PERSONA_ACTIVE": name.lower()})
+    return True

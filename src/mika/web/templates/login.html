@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block subtitle %}{{ 'first-run setup' if first_run else 'sign in' }}{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+<section>
+<div class="h"><span class="n">{{ '00' }}</span><h2>{{ 'Create your account' if first_run else 'Sign in' }}</h2><span class="rule"></span></div>
+{% if error %}<div class="banner warn">{{ error }}</div>{% endif %}
+{% if first_run %}<p class="lede">First run - pick the email and password you'll use to manage this bot from the web. Stored locally, hashed; never leaves your server.</p>{% endif %}
+<form method="post" action="/login" style="max-width:380px">
+  <div class="field"><label for="email">Email</label><input type="email" id="email" name="email" required value="{{ email or '' }}"></div>
+  <div class="field"><label for="password">Password</label><input type="password" id="password" name="password" required></div>
+  {% if first_run %}<div class="field"><label for="confirm">Confirm password</label><input type="password" id="confirm" name="confirm" required></div>{% endif %}
+  <button type="submit">{{ 'Create account' if first_run else 'Sign in' }}</button>
+</form>
+</section>
+{% endblock %}
+{% block footer %}Local admin account. Reset it anytime with <code>mika setup</code>.{% endblock %}

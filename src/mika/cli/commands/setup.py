@@ -1,98 +1,164 @@
-"""`mika setup`: the friendly first-run wizard that writes your .env."""
+"""`mika setup`: one guided flow - bot, AI, web login, memory and personality."""
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
+import asyncio
+import secrets
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from mika.ai.learning.persona_forge import (
+    activate,
+    all_personas,
+    forge_persona,
+    persona_summary,
+    slugify,
+)
+from mika.ai.llm.client import LLMClient
+from mika.core.config import get_settings
+from mika.core.env_file import write_env
+from mika.web.auth import hash_password
+
 console = Console()
 
 _INTRO = (
-    "Welcome! I'll set up your all-purpose Discord bot + AI.\n"
-    "I'll ask a few questions and save everything for you - no file editing.\n\n"
-    "Need credentials? Open [bold]docs/DISCORD-SETUP.md[/] in another window."
+    "Welcome! This sets up your Discord bot + AI in one go - no file editing.\n"
+    "When it finishes you'll have a working bot and a web dashboard to run everything.\n\n"
+    "Need Discord credentials? Open [bold]docs/DISCORD-SETUP.md[/] in another window."
 )
+_HONCHO = (
+    "[bold]Long-term memory (Honcho)[/] lets the bot remember people and facts across "
+    "sessions and recall what's relevant - not just the recent chat.\n"
+    "Pros: deeper, personalized replies. Cost: it needs Docker and a little more setup.\n"
+    "Skip it and the bot still remembers recent conversation out of the box."
+)
+_MIN_PASSWORD = 8
+_MASK = {"DISCORD_TOKEN", "MIKA_LLM_API_KEY", "MIKA_WEB_PASSWORD"}
 
 
 def setup() -> None:
     """Run the interactive setup wizard."""
-    console.print(Panel(_INTRO, title="Mika setup", border_style="cyan"))
-
+    console.print(Panel(_INTRO, title="mika setup", border_style="red"))
     answers: dict[str, str] = {}
+
+    console.rule("[bold]Discord[/]")
     answers["DISCORD_TOKEN"] = Prompt.ask(
-        "[bold]Discord bot token[/] (from the Bot tab)", password=True
+        "[bold]Bot token[/] (Developer Portal -> Bot)", password=True
     )
     answers["DISCORD_CLIENT_ID"] = Prompt.ask(
-        "[bold]Application ID[/] (General Information tab)", default=""
+        "[bold]Application ID[/] (General Information)", default=""
     )
+
+    console.rule("[bold]AI[/]")
     answers["MIKA_PERSONA_NAME"] = Prompt.ask("[bold]Bot display name[/]", default="Mika")
     answers["MIKA_LLM_API_KEY"] = Prompt.ask(
         "[bold]AI key[/] (OpenRouter - openrouter.ai/keys)", password=True
     )
-    answers["MIKA_LLM_MODEL"] = Prompt.ask("[bold]AI model[/]", default="openai/gpt-4o-mini")
+    answers["MIKA_LLM_MODEL"] = Prompt.ask("[bold]Chat model[/]", default="openai/gpt-4o-mini")
 
-    if Confirm.ask("Limit the bot to one server? (recommended for testing)", default=True):
+    if Confirm.ask("Limit the bot to one server? (recommended)", default=True):
         answers["DISCORD_GUILD_IDS"] = Prompt.ask(
-            "  Server ID (right-click server -> Copy Server ID)", default=""
+            "  Server ID (right-click server -> Copy ID)", default=""
         )
-    if Confirm.ask("Pick one channel where the bot chats without being @mentioned?", default=False):
+    if Confirm.ask("Pick a channel where it chats without being @mentioned?", default=False):
         answers["DISCORD_RESPONSE_CHANNEL_IDS"] = Prompt.ask("  Channel ID", default="")
-    if Confirm.ask(
-        "Enable long-term memory (Honcho)? Needs Docker; you can add it later instead.",
-        default=False,
-    ):
+
+    console.rule("[bold]Web dashboard[/]")
+    console.print(
+        "[dim]Manage everything from your browser - model, personas, settings. No SSH.[/]"
+    )
+    answers["MIKA_WEB_EMAIL"] = Prompt.ask("[bold]Dashboard email[/]")
+    answers["MIKA_WEB_PASSWORD"] = hash_password(_password())
+    answers["MIKA_WEB_SECRET"] = secrets.token_urlsafe(32)
+
+    console.rule("[bold]Memory[/]")
+    console.print(Panel(_HONCHO, border_style="grey50"))
+    if Confirm.ask("Enable long-term memory (Honcho)?", default=False):
         answers["MIKA_MEMORY_HONCHO_ENABLED"] = "true"
-        slug = re.sub(r"[^a-z0-9_-]", "-", answers["MIKA_PERSONA_NAME"].lower()) or "bot"
-        answers["MIKA_MEMORY_HONCHO_WORKSPACE"] = slug
+        answers["MIKA_MEMORY_HONCHO_WORKSPACE"] = slugify(answers["MIKA_PERSONA_NAME"])
         answers["MIKA_MEMORY_HONCHO_SESSION"] = "main"
-        console.print("  [dim]After setup, run[/] [bold]mika honcho up[/] [dim]to start it.[/]")
+        console.print("  [dim]After setup, run [bold]mika honcho up[/] to start it.[/]")
+
+    console.rule("[bold]Personality[/]")
+    choice = _choose_persona()
 
     _summary(answers)
-    if not Confirm.ask("Save this to .env?", default=True):
+    if not Confirm.ask("Save and finish?", default=True):
         console.print("[yellow]Cancelled - nothing was written.[/]")
         return
-    _write_env(answers)
-    _done()
+    write_env(answers)
+    _apply_persona(choice)
+    _done(answers)
+
+
+def _password() -> str:
+    while True:
+        password = Prompt.ask("[bold]Dashboard password[/]", password=True)
+        if len(password) < _MIN_PASSWORD:
+            console.print(f"  [red]Use at least {_MIN_PASSWORD} characters.[/]")
+            continue
+        if password == Prompt.ask("  Confirm password", password=True):
+            return password
+        console.print("  [red]Didn't match - try again.[/]")
+
+
+def _choose_persona() -> tuple[str, str, str]:
+    presets = all_personas()
+    names = list(presets)
+    console.print("Pick a personality (change it or build more anytime in the dashboard):\n")
+    for index, name in enumerate(names, 1):
+        console.print(f"  [bold]{index}[/]. [bold]{name}[/] - {persona_summary(presets[name])}")
+    console.print(
+        f"  [bold]{len(names) + 1}[/]. [bold]custom[/] - a famous person or fictional character"
+    )
+    choices = [str(i) for i in range(1, len(names) + 2)]
+    picked = int(Prompt.ask("Choice", choices=choices, default="1"))
+    if picked <= len(names):
+        return ("preset", names[picked - 1], "")
+    character = Prompt.ask("  [bold]Character[/] (e.g. Sherlock Holmes, Tony Stark, Yoda)")
+    notes = Prompt.ask("  Notes (optional)", default="")
+    return ("custom", character, notes)
+
+
+def _apply_persona(choice: tuple[str, str, str]) -> None:
+    kind, name, notes = choice
+    if kind == "preset":
+        activate(name)
+        console.print(f"  [green]Personality set to {name}.[/]")
+        return
+    console.print(f"  [dim]Building '{name}' - a few seconds...[/]")
+    try:
+        path = asyncio.run(forge_persona(LLMClient(), name, notes or name))
+        activate(path.stem)
+        console.print(f"  [green]Built and set '{path.stem}'.[/]")
+    except Exception as error:  # generation hits the network; fall back gracefully
+        activate("friendly")
+        console.print(
+            f"  [yellow]Couldn't build that ({error}); using 'friendly' - retry later.[/]"
+        )
 
 
 def _summary(answers: dict[str, str]) -> None:
     table = Table(title="Review", show_header=True)
     table.add_column("setting")
     table.add_column("value")
-    masked = {"DISCORD_TOKEN", "MIKA_LLM_API_KEY"}
     for key, value in answers.items():
-        shown = "••••••••" if (key in masked and value) else (value or "[dim](blank)[/]")
+        shown = "********" if (key in _MASK and value) else (value or "[dim](blank)[/]")
         table.add_row(key, shown)
     console.print(table)
 
 
-def _write_env(answers: dict[str, str]) -> None:
-    example = Path(".env.example")
-    lines = example.read_text(encoding="utf-8").splitlines() if example.exists() else []
-    written: set[str] = set()
-    out: list[str] = []
-    for line in lines:
-        match = re.match(r"^([A-Z][A-Z0-9_]+)=", line)
-        if match and match.group(1) in answers:
-            out.append(f"{match.group(1)}={answers[match.group(1)]}")
-            written.add(match.group(1))
-        else:
-            out.append(line)
-    out.extend(f"{key}={value}" for key, value in answers.items() if key not in written)
-    Path(".env").write_text("\n".join(out) + "\n", encoding="utf-8")
-
-
-def _done() -> None:
+def _done(answers: dict[str, str]) -> None:
+    web = get_settings().web
     steps = (
-        "Saved to [bold].env[/]\n\n"
+        f"Dashboard: [bold]http://{web.host}:{web.port}[/]\n"
+        f"Log in as: [bold]{answers['MIKA_WEB_EMAIL']}[/]\n\n"
         "Next:\n"
-        "  1. [bold]mika doctor[/]   - check everything works\n"
-        '  2. [bold]mika chat "hi"[/]  - test the AI in the terminal\n'
-        "  3. [bold]mika run[/]      - start the bot in Discord"
+        "  1. [bold]mika doctor[/]              - check everything works\n"
+        "  2. [bold]mika service install[/]     - run the bot + dashboard 24/7\n"
+        "     (or [bold]mika run[/] to start it in this terminal)"
     )
     console.print(Panel(steps, title="All set", border_style="green"))

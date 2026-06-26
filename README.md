@@ -1,9 +1,9 @@
 # Mika
 
 A self-hostable, multi-purpose Discord bot: an LLM chat companion **and** a full
-bot framework — slash commands, tickets, moderation, fun/utility, and server
-quality-of-life — with a one-command installer, an interactive setup wizard, and a
-localhost web page for settings and overviews.
+bot framework — slash commands, tickets, moderation, fun/utility — plus a
+**login-gated web control panel** to run everything (model, personas, memory,
+Discord settings) from your browser. One-command install; no SSH after setup.
 
 Built in Python, designed to run on a Linux VPS under systemd.
 
@@ -41,6 +41,7 @@ make run
 | Guide | What it covers |
 |---|---|
 | [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | Beginner walkthrough — zip to running bot in ~10 min |
+| [docs/DASHBOARD.md](docs/DASHBOARD.md) | The web control panel — settings, personas, login |
 | [docs/DISCORD-SETUP.md](docs/DISCORD-SETUP.md) | Creating the bot, token, intents, invite, server/channel IDs |
 | [docs/COSTS.md](docs/COSTS.md) | What the AI costs and how to keep it cheap |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Run 24/7 — on the host or in Docker |
@@ -48,6 +49,19 @@ make run
 | [docs/HONCHO-MEMORY.md](docs/HONCHO-MEMORY.md) | Optional long-term semantic memory |
 
 ## Screenshots
+
+
+**Web control panel** — every setting editable in the browser, secrets masked, login-gated
+
+![settings](docs/screenshots/web-settings.png)
+
+**Personas** — switch instantly, or build any famous/fictional character (CrewSoul)
+
+![personas](docs/screenshots/web-personas.png)
+
+**Sign in** — single owner account (email + password)
+
+![login](docs/screenshots/web-login.png)
 
 **Setup wizard** — `mika setup` (no file editing; masks secrets)
 

@@ -11,26 +11,24 @@ Welcome! This is your bot. Setup takes about 10 minutes and needs **no coding**.
    ```
    ./install.sh
    ```
-   It installs everything, then asks you a few questions (your Discord token, a
-   name for the bot, and an AI key) and saves them for you.
-3. Test the AI right in the terminal:
-   ```
-   make chat
-   ```
-4. Check everything is working:
-   ```
-   make doctor
-   ```
-5. Start the bot:
-   ```
-   make run
-   ```
+   It installs everything, then asks a few questions - your Discord token, an AI key,
+   and an email + password for your **web dashboard** - and offers to start the bot
+   right away.
+3. Open your dashboard at the address it prints (usually `http://127.0.0.1:8080`) and
+   log in. Change the model, build personas, edit every setting - no coding, no SSH.
 
-**Step-by-step beginner guide:** see `docs/GETTING-STARTED.md`
-**Getting your Discord token & permissions:** see `docs/DISCORD-SETUP.md`
-**What the AI costs:** see `docs/COSTS.md`
-**Running 24/7 (host or Docker):** see `docs/DEPLOY.md`
-**Opening the dashboard remotely:** see `docs/EXPOSE.md`
+![Control panel](docs/screenshots/web-settings.png)
+
+Prefer the terminal? `make chat` tests the AI, `make doctor` checks everything, and
+`make run` starts the bot in the foreground.
+
+**Guides:**
+- `docs/GETTING-STARTED.md` - step-by-step beginner walkthrough
+- `docs/DASHBOARD.md` - the web control panel
+- `docs/DISCORD-SETUP.md` - your Discord token & permissions
+- `docs/COSTS.md` - what the AI costs
+- `docs/DEPLOY.md` - running 24/7 (host or Docker)
+- `docs/EXPOSE.md` - opening the dashboard to your phone safely
 
 ## Talking to the bot
 
@@ -42,8 +40,8 @@ It also has slash commands:
 
 ## Running it 24/7
 
-To keep the bot online on a server, run `uv run mika service install` and follow
-the printed instructions.
+The installer offers to do this for you. Anytime, run `mika service install` to keep the
+bot **and** its dashboard running in the background (survives reboots).
 
 ## License
 
