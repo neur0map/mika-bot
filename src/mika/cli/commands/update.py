@@ -88,6 +88,10 @@ def _apply(release: Path, root: Path) -> None:
             shutil.copytree(item, dest)
         else:
             shutil.copy2(item, dest)
+    for script in ("install.sh", "update.sh"):  # zip extraction drops the exec bit
+        path = root / script
+        if path.is_file():
+            path.chmod(0o755)
 
 
 def _restore(backup: Path, root: Path) -> None:

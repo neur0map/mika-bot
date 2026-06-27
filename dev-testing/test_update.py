@@ -53,3 +53,21 @@ def test_version_reads_pyproject(tmp_path: Path) -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text('[project]\nversion = "1.2.3"\n', encoding="utf-8")
     assert _version(pyproject) == "1.2.3"
+
+
+def test_apply_makes_scripts_executable(tmp_path: Path) -> None:
+    import os
+
+    root = tmp_path / "install"
+    (root / "src" / "mika").mkdir(parents=True)
+    (root / "pyproject.toml").write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8")
+    release = tmp_path / "mika-0.2.0"
+    (release / "src" / "mika").mkdir(parents=True)
+    (release / "pyproject.toml").write_text('[project]\nversion = "0.2.0"\n', encoding="utf-8")
+    for name in ("install.sh", "update.sh"):
+        script = release / name
+        script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        script.chmod(0o644)  # simulate the bit dropped by zip extraction
+    _apply(release, root)
+    assert os.access(root / "install.sh", os.X_OK)
+    assert os.access(root / "update.sh", os.X_OK)
