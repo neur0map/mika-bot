@@ -57,6 +57,14 @@ case ":${PATH}:" in
         ;;
 esac
 
+# fish keeps PATH separately - add it there too if fish is present.
+if command -v fish >/dev/null 2>&1; then
+    fish_cfg="$HOME/.config/fish/config.fish"
+    mkdir -p "$(dirname "$fish_cfg")"
+    grep -q 'added by mika installer' "$fish_cfg" 2>/dev/null || \
+        printf '\n# added by mika installer\nfish_add_path "$HOME/.local/bin"\n' >> "$fish_cfg"
+fi
+
 say "Starting the setup wizard..."
 "$BIN_DIR/mika" setup
 
