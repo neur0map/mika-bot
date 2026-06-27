@@ -76,6 +76,13 @@ class BotApp(commands.Bot):
     async def _serve_web(self, server: _QuietServer) -> None:
         try:
             await server.serve()
+        except (SystemExit, OSError) as error:
+            # port already in use, etc. - uvicorn calls sys.exit(1); keep the bot alive
+            logger.warning(
+                "dashboard could not start on port %s (%s); bot continues without it",
+                get_settings().web.port,
+                error,
+            )
         except Exception as error:
             logger.warning("dashboard did not start (bot keeps running): %s", error)
 
