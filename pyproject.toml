@@ -1,6 +1,6 @@
 [project]
 name = "mika"
-version = "0.1.0"
+version = "0.2.0"
 description = "Self-hostable multi-purpose Discord bot: LLM chat companion + bot framework."
 requires-python = ">=3.12"
 readme = "README.md"
