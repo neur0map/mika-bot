@@ -19,3 +19,9 @@ def test_prompt_guides_flirty_comedy_without_forcing_it() -> None:
     assert "Read flirting as a vibe" in prompt
     assert "do not force it" in prompt
     assert "callbacks" in prompt
+
+
+def test_prompt_guides_media_reactivity_without_captioning() -> None:
+    prompt = build_system_prompt("")
+    assert "Incoming GIFs" in prompt
+    assert "not captions to describe" in prompt

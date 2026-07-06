@@ -62,6 +62,28 @@ def _media_from_message(message: discord.Message) -> list[dict[str, Any]]:
     return media
 
 
+def _media_context(media: list[dict[str, Any]]) -> str:
+    if not media:
+        return ""
+    parts: list[str] = []
+    for item in media[:4]:
+        kind = str(item.get("kind") or "media")
+        source = str(item.get("source") or "unknown")
+        name = str(item.get("name") or "").strip()
+        content_type = str(item.get("contentType") or "").strip()
+        embed_type = str(item.get("embedType") or "").strip()
+        label = ", ".join(value for value in (kind, source, content_type, embed_type) if value)
+        if name:
+            parts.append(f"- {label}: {name[:120]}")
+        else:
+            parts.append(f"- {label}")
+    return (
+        "[incoming media context: treat this socially; decide whether it reads as "
+        "a joke, sarcasm, flirt, reaction bait, hype, or serious share. Do not describe "
+        "the media unless the user asks.]\n" + "\n".join(parts)
+    )
+
+
 def _message_record(message: discord.Message, role: str, content: str) -> dict[str, Any]:
     return {
         "id": f"py-{message.id}",
@@ -113,9 +135,8 @@ def setup(bot: BotApp) -> None:
     async def on_message(message: discord.Message) -> None:
         if bot.user is None or not _in_scope(message, allowed_guilds):
             return
-        content = message.clean_content or (
-            "[media/message with no text]" if message.attachments else ""
-        )
+        inbound_media = _media_from_message(message)
+        content = message.clean_content or ("[media/message with no text]" if inbound_media else "")
         if message.author.id != bot.user.id:
             role = "bot" if message.author.bot else "user"
             await archive_message(_message_record(message, role, content))
@@ -126,7 +147,8 @@ def setup(bot: BotApp) -> None:
         if not mentioned and not free_chat:
             return
         text = message.clean_content.replace(f"@{bot.user.display_name}", "").strip()
-        if not text:
+        media_context = _media_context(inbound_media)
+        if not text and not media_context:
             return
         try:
             async with message.channel.typing():
@@ -135,6 +157,7 @@ def setup(bot: BotApp) -> None:
                     author_id=str(message.author.id),
                     author_name=message.author.display_name,
                     text=text,
+                    media_context=media_context,
                 )
         except Exception as error:
             logger.exception("reply failed: %s", error)
@@ -176,6 +199,8 @@ def setup(bot: BotApp) -> None:
                     "captureVersion": 3,
                     "source": "mikav2-python",
                     "chosenMedia": {"type": turn.media.kind, "query": turn.media.query},
+                    "inboundMediaCount": len(inbound_media),
+                    "mediaContext": media_context[:600] or None,
                     "mediaSent": bool(media_url),
                 },
             }
@@ -196,6 +221,8 @@ def setup(bot: BotApp) -> None:
                     "replyLength": len(turn.reply),
                     "reactions": list(turn.reactions),
                     "media": {"type": turn.media.kind, "query": turn.media.query, "url": media_url},
+                    "inboundMediaCount": len(inbound_media),
+                    "mediaContext": media_context[:600] or None,
                 },
             }
         )

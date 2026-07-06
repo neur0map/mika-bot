@@ -43,6 +43,14 @@ The Discord event handler sends the reply, adds at most one reaction, optionally
 searches Klipy for GIF/sticker/clip media, then records the outcome in the shared
 archive. This makes tone, reaction timing, and GIF judgment measurable.
 
+Incoming GIFs, stickers, images, and embeds are passed to the LLM as compact
+social context. Mikav2 should decide whether the media reads like a joke,
+sarcasm, flirting, hype, reaction bait, or a serious share. She should not
+caption or describe the GIF unless someone asks; the expected decision is whether
+to answer with text, add a reaction, match with a GIF/sticker/clip, or stay dry.
+The turn telemetry now records inbound media count and the compact context so GIF
+and reaction misses can be audited later.
+
 ## Output-leak guard
 
 Some models occasionally leak labels such as `reply:` or `media: none` into the

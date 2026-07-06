@@ -52,16 +52,30 @@ class LLMClient:
             await self._honcho.ensure()
 
     async def reply(
-        self, *, channel_id: str, author_id: str, author_name: str, text: str
+        self,
+        *,
+        channel_id: str,
+        author_id: str,
+        author_name: str,
+        text: str,
+        media_context: str = "",
     ) -> MikaTurn:
         """Produce one structured reply decision and persist the exchange."""
         history = await self._build_history(channel_id)
-        recall = await self._honcho.recall(text) if self._honcho is not None else ""
+        user_input = self._compose_user_input(text, media_context)
+        recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         system = build_system_prompt(recall)
-        raw = await self._generate(system, history, f"{author_name}: {text}")
+        raw = await self._generate(system, history, f"{author_name}: {user_input}")
         turn = self._parse_turn(raw)
-        await self._persist(channel_id, author_id, author_name, text, turn.reply)
+        await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
+
+    def _compose_user_input(self, text: str, media_context: str = "") -> str:
+        clean_text = text.strip()
+        clean_media = media_context.strip()
+        if clean_text and clean_media:
+            return f"{clean_text}\n{clean_media}"
+        return clean_text or clean_media or "[media/message with no text]"
 
     async def _build_history(self, channel_id: str) -> list[Message]:
         rows = await self._local.recent(channel_id)
@@ -115,8 +129,10 @@ class LLMClient:
             "reply is the Discord message text. reactions is 0-1 emoji from "
             "[👍,👎,😭,💀,👀,🤔,😂,😬,❤️,🔥,✅]. media is "
             "{type:'none'|'gif'|'sticker'|'clip', query:null|string}. "
-            "Use reactions/GIFs only when a real Discord user would; choose sarcasm, "
-            "heat, jokes, affection, confusion, and hype carefully. No explanations of this JSON."
+            "Use reactions/GIFs only when a real Discord user would. For incoming media, "
+            "decide if it is probably a joke, sarcasm, flirting, hype, confusion, or a serious "
+            "share; do not describe or caption the GIF/image unless asked. Choose between text, "
+            "one reaction, matching with a GIF, or staying dry. No explanations of this JSON."
         )
 
     def _parse_turn(self, raw: str) -> MikaTurn:

@@ -23,3 +23,10 @@ def test_parse_turn_accepts_json() -> None:
     )
     assert turn.reply == "night is fighting the flag allegations again"
     assert turn.reactions == ("💀",)
+
+
+def test_compose_user_input_keeps_media_context() -> None:
+    client = LLMClient()
+    media_context = "[incoming media context: treat this socially]\n- image, embed: funny.gif"
+    assert client._compose_user_input("", media_context) == media_context
+    assert client._compose_user_input("look", media_context) == f"look\n{media_context}"
