@@ -12,3 +12,10 @@ def test_prompt_includes_persona_name() -> None:
 
 def test_prompt_includes_memory_context() -> None:
     assert "a remembered fact" in build_system_prompt("a remembered fact")
+
+
+def test_prompt_guides_flirty_comedy_without_forcing_it() -> None:
+    prompt = build_system_prompt("")
+    assert "Read flirting as a vibe" in prompt
+    assert "do not force it" in prompt
+    assert "callbacks" in prompt
