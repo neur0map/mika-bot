@@ -1,0 +1,75 @@
+# Mikav2 side-by-side A/B test
+
+Mikav2 can run beside the older JavaScript Mika bot without replacing it. The
+setup is meant for comparing real Discord behavior, not for an in-place migration.
+
+## Runtime boundaries
+
+- Keep each bot on its own Discord application, token, container, and local data
+  directory.
+- Mikav2 can run in chat-only mode with `MIKA_COMMANDS_ENABLED=false`; this skips
+  slash-command registration and avoids command collisions with the incumbent bot.
+- Keep the older bot running while Mikav2 is tested. Shared storage is only for
+  evaluation data and semantic memory, not operational state.
+
+## Shared evaluation logs
+
+Set `MIKA_SHARED_ARCHIVE_PATH` when Mikav2 should write into the same
+JS-compatible archive used by the older bot. Mikav2 writes:
+
+- message rows with `metadata.source = "mikav2-python"`
+- assistant rows linked to the triggering Discord message
+- `mikav2_turn_decision` training events with reply length, reaction choices, and
+  media choices
+- reaction feedback events from human users
+
+Mikav2 still keeps its own local SQLite database for recent chat context. That
+prevents schema collisions while still letting both bots share a durable archive
+and Honcho workspace/session for evaluation.
+
+## Reply, reaction, and media decisions
+
+The LLM client asks the model for a structured turn:
+
+```json
+{
+  "reply": "short Discord-native text",
+  "reactions": ["💀"],
+  "media": {"type": "none", "query": null}
+}
+```
+
+The Discord event handler sends the reply, adds at most one reaction, optionally
+searches Klipy for GIF/sticker/clip media, then records the outcome in the shared
+archive. This makes tone, reaction timing, and GIF judgment measurable.
+
+## Output-leak guard
+
+Some models occasionally leak labels such as `reply:` or `media: none` into the
+visible Discord message. The parser now strips those labels and keeps only the
+actual reply text. A regression test covers the observed failure:
+
+```text
+ugh tell me about it ... reply: exactly, the pasta is a 10 ... media: none
+```
+
+The sent reply becomes only the text after `reply:` and before `media:`.
+
+## Heated chat tone
+
+Mikav2 should not sound like a corporate safety notice when Discord chat gets
+edgy. The persona guidance asks for dry, human banter: tease the person or their
+behavior in the room, avoid lectures and disclaimers, and avoid blanket claims
+about races, nationalities, or ethnic groups. This keeps the bot natural without
+turning it into a group-targeting amplifier.
+
+## Verification checklist
+
+Before deploying a Mikav2 behavior change:
+
+1. Run ruff, mypy, and pytest locally.
+2. Rebuild and restart only the Mikav2 container.
+3. Verify the older Mika container is still up.
+4. Check startup logs for Discord gateway and Honcho success.
+5. Run a parser smoke test for any observed malformed model output.
+6. Confirm the shared archive records both user and assistant rows.

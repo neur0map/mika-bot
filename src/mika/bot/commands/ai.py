@@ -20,10 +20,11 @@ def setup(tree: app_commands.CommandTree[Any]) -> None:
     async def ask(interaction: Interaction, question: str) -> None:
         await interaction.response.defer(thinking=True)
         bot = cast("BotApp", interaction.client)
-        reply = await bot.llm.reply(
+        turn = await bot.llm.reply(
             channel_id=str(interaction.channel_id),
             author_id=str(interaction.user.id),
             author_name=interaction.user.display_name,
             text=question,
         )
+        reply = turn.reply if hasattr(turn, "reply") else str(turn)
         await interaction.followup.send(reply[:_MAX_REPLY] or "...")

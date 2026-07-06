@@ -43,6 +43,9 @@ class BotApp(commands.Bot):
         await self.llm.startup()
         start_schedulers(self)
         self._start_web()
+        if not get_settings().commands_enabled:
+            logger.info("slash commands disabled; chat-only mode")
+            return
         register_all(self.tree)
         guild_ids = get_settings().discord.guild_id_list
         if not guild_ids:

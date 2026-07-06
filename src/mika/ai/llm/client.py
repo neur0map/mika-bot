@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 from mika.ai.llm.chat.pipeline import run_turn
 from mika.ai.llm.chat.prompt import build_system_prompt
 from mika.ai.llm.memory.honcho import HonchoMemory
@@ -10,12 +13,15 @@ from mika.ai.llm.providers.base import ChatProvider, Message
 from mika.ai.llm.providers.openai_compatible import OpenAICompatibleProvider
 from mika.ai.llm.tools.registry import ToolRegistry
 from mika.ai.llm.tools.web_search import web_search_tool
+from mika.ai.llm.turn import MediaChoice, MikaTurn
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-_BUSY_REPLY = "sorry, my brain is having a moment. try again in a bit."
+_BUSY_REPLY = "brain snagged. give me a second and try again."
+_ALLOWED_REACTIONS = {"👍", "👎", "😭", "💀", "👀", "🤔", "😂", "😬", "❤️", "🔥", "✅"}
+_MEDIA_TYPES = {"none", "gif", "sticker", "clip"}
 
 
 class LLMClient:
@@ -45,14 +51,17 @@ class LLMClient:
         if self._honcho is not None:
             await self._honcho.ensure()
 
-    async def reply(self, *, channel_id: str, author_id: str, author_name: str, text: str) -> str:
-        """Produce a reply to one user message and persist the exchange."""
+    async def reply(
+        self, *, channel_id: str, author_id: str, author_name: str, text: str
+    ) -> MikaTurn:
+        """Produce one structured reply decision and persist the exchange."""
         history = await self._build_history(channel_id)
         recall = await self._honcho.recall(text) if self._honcho is not None else ""
         system = build_system_prompt(recall)
-        answer = await self._generate(system, history, f"{author_name}: {text}")
-        await self._persist(channel_id, author_id, author_name, text, answer)
-        return answer
+        raw = await self._generate(system, history, f"{author_name}: {text}")
+        turn = self._parse_turn(raw)
+        await self._persist(channel_id, author_id, author_name, text, turn.reply)
+        return turn
 
     async def _build_history(self, channel_id: str) -> list[Message]:
         rows = await self._local.recent(channel_id)
@@ -66,12 +75,13 @@ class LLMClient:
 
     async def _generate(self, system: str, history: list[Message], user_text: str) -> str:
         settings = self._settings
+        structured_user_text = self._structured_instruction(user_text)
         try:
             return await run_turn(
                 self._provider,
                 system=system,
                 history=history,
-                user_text=user_text,
+                user_text=structured_user_text,
                 registry=self._tools,
                 use_tools=bool(self._tools),
                 model=settings.llm.model,
@@ -87,7 +97,7 @@ class LLMClient:
                 self._fallback,
                 system=system,
                 history=history,
-                user_text=user_text,
+                user_text=structured_user_text,
                 registry=self._tools,
                 use_tools=False,
                 model=settings.llm.fallback_model,
@@ -97,6 +107,60 @@ class LLMClient:
         except Exception as fallback_error:
             logger.error("fallback provider failed: %s", fallback_error)
             return _BUSY_REPLY
+
+    def _structured_instruction(self, user_text: str) -> str:
+        return (
+            f"{user_text}\n\n"
+            "Return strict JSON only with keys: reply, reactions, media. "
+            "reply is the Discord message text. reactions is 0-1 emoji from "
+            "[👍,👎,😭,💀,👀,🤔,😂,😬,❤️,🔥,✅]. media is "
+            "{type:'none'|'gif'|'sticker'|'clip', query:null|string}. "
+            "Use reactions/GIFs only when a real Discord user would; choose sarcasm, "
+            "heat, jokes, affection, confusion, and hype carefully. No explanations of this JSON."
+        )
+
+    def _parse_turn(self, raw: str) -> MikaTurn:
+        text = raw.strip()
+        candidate = text
+        if not candidate.startswith("{"):
+            match = re.search(r"\{.*\}", candidate, flags=re.S)
+            candidate = match.group(0) if match else candidate
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError:
+            reply = self._extract_labeled_reply(text) or self._clean_reply_text(text)
+            return MikaTurn(reply=reply or _BUSY_REPLY, raw=raw)
+        reply = str(data.get("reply") or data.get("message") or "").strip()
+        reply = self._clean_reply_text(reply) or _BUSY_REPLY
+        raw_reactions = data.get("reactions") if isinstance(data.get("reactions"), list) else []
+        reactions = tuple(str(item) for item in raw_reactions if str(item) in _ALLOWED_REACTIONS)[
+            :1
+        ]
+        raw_media = data.get("media") if isinstance(data.get("media"), dict) else {}
+        media_type = str(raw_media.get("type") or "none").lower()
+        if media_type not in _MEDIA_TYPES:
+            media_type = "none"
+        query_value = raw_media.get("query")
+        query = str(query_value).strip()[:80] if query_value else None
+        return MikaTurn(
+            reply=reply[:1900], reactions=reactions, media=MediaChoice(media_type, query), raw=raw
+        )
+
+    def _extract_labeled_reply(self, text: str) -> str | None:
+        match = re.search(
+            r"(?:^|\s)reply\s*:\s*(?P<reply>.*?)(?:\s+(?:media|reactions?)\s*:|$)",
+            text,
+            flags=re.I | re.S,
+        )
+        if not match:
+            return None
+        return self._clean_reply_text(match.group("reply"))
+
+    def _clean_reply_text(self, text: str) -> str:
+        cleaned = text.strip()
+        cleaned = re.sub(r"\s+(?:media|reactions?)\s*:\s*[^\n]+$", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"^reply\s*:\s*", "", cleaned, flags=re.I)
+        return re.sub(r"\s{2,}", " ", cleaned).strip()
 
     async def summarize(self, instruction: str, content: str, *, model: str | None = None) -> str:
         """One-shot completion with no memory or tools (used by self-reflection)."""
