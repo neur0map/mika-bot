@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Reaction feedback signals
+
+- Normalized reaction telemetry into coarse learning signals: positive, laugh,
+  confused, negative, and other.
+- Stored the signal beside raw emoji data so later reflection can distinguish a
+  laugh reaction from approval or confusion.
+
 ### Live self-reflection lessons
 
 - Fed the latest stored self-reflection lessons into the live system prompt next

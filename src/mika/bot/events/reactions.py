@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from mika.ai.learning.feedback import reaction_signal
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 from mika.persistence.shared_archive import archive_event
@@ -37,6 +38,7 @@ def setup(bot: BotApp) -> None:
                 return
             if allowed_guilds and str(message.guild.id) not in allowed_guilds:
                 return
+            emoji = str(reaction.emoji)
             await archive_event(
                 {
                     "event_type": "reaction_add",
@@ -48,9 +50,10 @@ def setup(bot: BotApp) -> None:
                     "discord_message_id": str(message.id),
                     "author": user.display_name,
                     "author_id": str(user.id),
-                    "emoji": str(reaction.emoji),
+                    "emoji": emoji,
                     "payload": {
                         "source": "mikav2-python",
+                        "feedbackSignal": reaction_signal(emoji),
                         "messageAuthorId": str(message.author.id) if message.author else None,
                         "messageAuthorName": message.author.display_name
                         if message.author

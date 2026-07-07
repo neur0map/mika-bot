@@ -41,7 +41,8 @@
 5. Add lightweight reaction feedback interpretation.
    - Reason: raw reactions are logged, but self-learning needs coarse positive,
      negative, confused, hype, and laugh signals.
-   - Status: planned.
+   - Status: implemented as positive, laugh, confused, negative, and other signals
+     stored in reaction telemetry.
 
 ## Medium-value changes
 
