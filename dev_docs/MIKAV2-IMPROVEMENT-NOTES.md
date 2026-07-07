@@ -66,6 +66,8 @@
    - Status: implemented in the shared Klipy search helper.
 3. Add small golden-fixture tests for sarcasm, flirting, media-only messages, and
    criticism handling.
+   - Status: implemented initial deterministic fixtures for sarcasm, flirting, and
+     media-reaction structured turns.
 4. Add log fields for schema version and parse fallback rate.
    - Status: implemented with `schemaVersion` and `parseStatus` in turn telemetry.
 5. Avoid greedy regex extraction for model JSON.

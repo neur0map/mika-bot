@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Social turn contract fixtures
+
+- Added golden tests for sarcasm, flirting, and media-reaction structured turns so
+  future prompt/parser changes cannot silently break the core social action shape.
+
 ### Reaction/media-only turns
 
 - Allowed structured turns with an empty reply when a reaction or media action is
