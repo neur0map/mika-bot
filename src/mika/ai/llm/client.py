@@ -192,10 +192,7 @@ class LLMClient:
 
     def _parse_turn(self, raw: str) -> MikaTurn:
         text = raw.strip()
-        candidate = text
-        if not candidate.startswith("{"):
-            match = re.search(r"\{.*\}", candidate, flags=re.S)
-            candidate = match.group(0) if match else candidate
+        candidate = self._extract_json_object(text) or text
         try:
             data = json.loads(candidate)
         except json.JSONDecodeError:
@@ -234,6 +231,33 @@ class LLMClient:
         except (TypeError, ValueError):
             return 0.5
         return max(0.0, min(1.0, number))
+
+    def _extract_json_object(self, text: str) -> str | None:
+        start = text.find("{")
+        if start < 0:
+            return None
+        depth = 0
+        in_string = False
+        escaped = False
+        for index, char in enumerate(text[start:], start=start):
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\" and in_string:
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : index + 1]
+        return None
 
     def _extract_labeled_reply(self, text: str) -> str | None:
         match = re.search(

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Balanced turn JSON extraction
+
+- Replaced greedy regex turn extraction with a balanced JSON-object scanner so
+  fenced JSON, nested media objects, and braces inside strings parse reliably.
+- Added regression coverage for prose-wrapped JSON and multiple-object outputs.
+
 ### Reaction feedback signals
 
 - Normalized reaction telemetry into coarse learning signals: positive, laugh,

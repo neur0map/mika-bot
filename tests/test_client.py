@@ -39,6 +39,23 @@ def test_parse_turn_clamps_unknown_intent_and_confidence() -> None:
     assert turn.confidence == 1.0
 
 
+def test_parse_turn_extracts_balanced_json_from_prose() -> None:
+    client = LLMClient()
+    turn = client._parse_turn(
+        '```json\n{"reply":"brace joke {still text}","reactions":[],"media":'
+        '{"type":"none","query":null},"intent":"joke","confidence":0.7}\n``` trailing'
+    )
+    assert turn.reply == "brace joke {still text}"
+    assert turn.intent == "joke"
+    assert turn.confidence == 0.7
+
+
+def test_json_extractor_ignores_trailing_objects() -> None:
+    client = LLMClient()
+    text = '{"reply":"first","media":{"type":"none"}} {"reply":"second"}'
+    assert client._extract_json_object(text) == '{"reply":"first","media":{"type":"none"}}'
+
+
 def test_compose_user_input_keeps_media_context() -> None:
     client = LLMClient()
     media_context = "[incoming media context: treat this socially]\n- image, embed: funny.gif"
