@@ -47,6 +47,8 @@
 ## Medium-value changes
 
 1. Add a bounded retry when the structured turn is invalid or too repetitive.
+   - Status: implemented for invalid/non-JSON turn outputs; repetitive wording is
+     handled by recent-phrase pressure rather than extra retries.
 2. Add media-query normalization so GIF searches use short mood/action queries.
    - Status: implemented in the shared Klipy search helper.
 3. Add small golden-fixture tests for sarcasm, flirting, media-only messages, and

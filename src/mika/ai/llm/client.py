@@ -86,6 +86,9 @@ class LLMClient:
         system = build_system_prompt(self._memory_context(recall, reflection))
         raw = await self._generate(system, history, f"{author_name}: {generation_input}")
         turn = self._parse_turn(raw)
+        turn = await self._retry_if_unstructured(
+            turn, system, history, author_name, generation_input
+        )
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
 
@@ -114,6 +117,26 @@ class LLMClient:
         if reflection and reflection.strip():
             sections.append("Recent self-reflection lessons:\n" + reflection.strip())
         return "\n\n".join(sections)
+
+    async def _retry_if_unstructured(
+        self,
+        turn: MikaTurn,
+        system: str,
+        history: list[Message],
+        author_name: str,
+        generation_input: str,
+    ) -> MikaTurn:
+        if turn.parse_status == "json":
+            return turn
+        retry_input = (
+            f"{author_name}: {generation_input}\n\n"
+            "[previous output failed the mika_turn.v2 JSON contract. Return only one "
+            "valid JSON object with schema_version, reply, reactions, media, intent, "
+            "and confidence.]"
+        )
+        retry_raw = await self._generate(system, history, retry_input)
+        retry_turn = self._parse_turn(retry_raw)
+        return retry_turn if retry_turn.parse_status == "json" else turn
 
     def _recent_assistant_phrases(self, history: list[Message]) -> list[str]:
         phrases: list[str] = []

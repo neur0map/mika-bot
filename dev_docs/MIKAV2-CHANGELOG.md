@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Structured-output retry
+
+- Added one bounded retry when the first model response leaks labels or falls back
+  to plain text instead of valid `mika_turn.v2` JSON.
+- Kept the original cleaned reply if the retry also fails, avoiding blank or worse
+  user-visible output.
+
 ### Turn parse status telemetry
 
 - Added `parse_status` to structured turn results and shared telemetry so live

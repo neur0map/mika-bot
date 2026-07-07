@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from mika.ai.llm.client import LLMClient
 
 
@@ -84,3 +86,29 @@ def test_memory_context_includes_self_reflection_lessons() -> None:
     assert "remembered thing" in context
     assert "Recent self-reflection lessons" in context
     assert "vary reactions more" in context
+
+
+async def test_retry_if_unstructured_uses_valid_json_retry(monkeypatch: Any) -> None:
+    client = LLMClient()
+    first = client._parse_turn("reply: leaked label media: none")
+
+    async def fake_generate(*_args: Any, **_kwargs: Any) -> str:
+        return '{"reply":"clean now","reactions":[],"media":{"type":"none"}}'
+
+    monkeypatch.setattr(client, "_generate", fake_generate)
+    turn = await client._retry_if_unstructured(first, "system", [], "user", "hi")
+    assert turn.reply == "clean now"
+    assert turn.parse_status == "json"
+
+
+async def test_retry_if_unstructured_keeps_first_when_retry_fails(monkeypatch: Any) -> None:
+    client = LLMClient()
+    first = client._parse_turn("reply: keep this media: none")
+
+    async def fake_generate(*_args: Any, **_kwargs: Any) -> str:
+        return "still not json"
+
+    monkeypatch.setattr(client, "_generate", fake_generate)
+    turn = await client._retry_if_unstructured(first, "system", [], "user", "hi")
+    assert turn.reply == "keep this"
+    assert turn.parse_status == "labeled"
