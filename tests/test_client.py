@@ -18,11 +18,25 @@ def test_parse_turn_strips_labeled_output_leak() -> None:
 def test_parse_turn_accepts_json() -> None:
     client = LLMClient()
     turn = client._parse_turn(
-        '{"reply":"night is fighting the flag allegations again",'
-        '"reactions":["💀"],"media":{"type":"none","query":null}}'
+        '{"schema_version":"mika_turn.v2",'
+        '"reply":"night is fighting the flag allegations again",'
+        '"reactions":["💀"],"media":{"type":"none","query":null},'
+        '"intent":"sarcasm","confidence":0.82}'
     )
     assert turn.reply == "night is fighting the flag allegations again"
     assert turn.reactions == ("💀",)
+    assert turn.intent == "sarcasm"
+    assert turn.confidence == 0.82
+    assert turn.schema_version == "mika_turn.v2"
+
+
+def test_parse_turn_clamps_unknown_intent_and_confidence() -> None:
+    client = LLMClient()
+    turn = client._parse_turn(
+        '{"reply":"okay","reactions":[],"media":{"type":"none"},"intent":"random","confidence":4}'
+    )
+    assert turn.intent == "chat"
+    assert turn.confidence == 1.0
 
 
 def test_compose_user_input_keeps_media_context() -> None:

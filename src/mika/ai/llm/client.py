@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from mika.ai.llm.chat.pipeline import run_turn
 from mika.ai.llm.chat.prompt import build_system_prompt
@@ -22,6 +23,19 @@ logger = get_logger(__name__)
 _BUSY_REPLY = "brain snagged. give me a second and try again."
 _ALLOWED_REACTIONS = {"👍", "👎", "😭", "💀", "👀", "🤔", "😂", "😬", "❤️", "🔥", "✅"}
 _MEDIA_TYPES = {"none", "gif", "sticker", "clip"}
+_TURN_SCHEMA_VERSION = "mika_turn.v2"
+_TURN_INTENTS = {
+    "chat",
+    "joke",
+    "sarcasm",
+    "flirt",
+    "hype",
+    "comfort",
+    "question",
+    "criticism",
+    "media_reaction",
+    "serious",
+}
 
 
 class LLMClient:
@@ -125,14 +139,18 @@ class LLMClient:
     def _structured_instruction(self, user_text: str) -> str:
         return (
             f"{user_text}\n\n"
-            "Return strict JSON only with keys: reply, reactions, media. "
-            "reply is the Discord message text. reactions is 0-1 emoji from "
+            "Return strict JSON only with keys: schema_version, reply, reactions, "
+            "media, intent, confidence. schema_version is 'mika_turn.v2'. reply is "
+            "the Discord message text. reactions is 0-1 emoji from "
             "[👍,👎,😭,💀,👀,🤔,😂,😬,❤️,🔥,✅]. media is "
-            "{type:'none'|'gif'|'sticker'|'clip', query:null|string}. "
-            "Use reactions/GIFs only when a real Discord user would. For incoming media, "
-            "decide if it is probably a joke, sarcasm, flirting, hype, confusion, or a serious "
-            "share; do not describe or caption the GIF/image unless asked. Choose between text, "
-            "one reaction, matching with a GIF, or staying dry. No explanations of this JSON."
+            "{type:'none'|'gif'|'sticker'|'clip', query:null|string}. intent is one of "
+            "chat, joke, sarcasm, flirt, hype, comfort, question, criticism, "
+            "media_reaction, serious. confidence is a number from 0 to 1 for the social "
+            "read, not factual certainty. Use reactions/GIFs only when a real Discord user "
+            "would. For incoming media, decide if it is probably a joke, sarcasm, flirting, "
+            "hype, confusion, or a serious share; do not describe or caption the GIF/image "
+            "unless asked. Choose between text, one reaction, matching with a GIF, or "
+            "staying dry. No explanations of this JSON."
         )
 
     def _parse_turn(self, raw: str) -> MikaTurn:
@@ -158,9 +176,27 @@ class LLMClient:
             media_type = "none"
         query_value = raw_media.get("query")
         query = str(query_value).strip()[:80] if query_value else None
+        intent = str(data.get("intent") or "chat").strip().lower()
+        if intent not in _TURN_INTENTS:
+            intent = "chat"
+        confidence = self._bounded_confidence(data.get("confidence"))
+        schema_version = str(data.get("schema_version") or _TURN_SCHEMA_VERSION).strip()
         return MikaTurn(
-            reply=reply[:1900], reactions=reactions, media=MediaChoice(media_type, query), raw=raw
+            reply=reply[:1900],
+            reactions=reactions,
+            media=MediaChoice(media_type, query),
+            intent=intent,
+            confidence=confidence,
+            schema_version=schema_version or _TURN_SCHEMA_VERSION,
+            raw=raw,
         )
+
+    def _bounded_confidence(self, value: Any) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return 0.5
+        return max(0.0, min(1.0, number))
 
     def _extract_labeled_reply(self, text: str) -> str | None:
         match = re.search(

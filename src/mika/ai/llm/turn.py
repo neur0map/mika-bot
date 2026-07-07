@@ -20,4 +20,7 @@ class MikaTurn:
     reply: str
     reactions: tuple[str, ...] = ()
     media: MediaChoice = MediaChoice()
+    intent: str = "chat"
+    confidence: float = 0.5
+    schema_version: str = "mika_turn.v2"
     raw: str = ""

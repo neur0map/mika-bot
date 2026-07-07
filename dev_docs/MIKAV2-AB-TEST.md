@@ -33,15 +33,19 @@ The LLM client asks the model for a structured turn:
 
 ```json
 {
+  "schema_version": "mika_turn.v2",
   "reply": "short Discord-native text",
   "reactions": ["💀"],
-  "media": {"type": "none", "query": null}
+  "media": {"type": "none", "query": null},
+  "intent": "sarcasm",
+  "confidence": 0.82
 }
 ```
 
 The Discord event handler sends the reply, adds at most one reaction, optionally
 searches Klipy for GIF/sticker/clip media, then records the outcome in the shared
-archive. This makes tone, reaction timing, and GIF judgment measurable.
+archive. This makes tone, reaction timing, GIF judgment, social intent, and
+confidence measurable.
 
 Incoming GIFs, stickers, images, and embeds are passed to the LLM as compact
 social context. Mikav2 should decide whether the media reads like a joke,
