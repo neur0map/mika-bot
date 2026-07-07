@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 from typing import Any
 
@@ -10,6 +11,16 @@ import httpx
 from mika.core.config import get_settings
 
 _MEDIA_SUFFIXES = (".gif", ".gifv", ".mp4", ".webp", ".webm")
+_MAX_QUERY_WORDS = 6
+_MAX_QUERY_CHARS = 70
+
+
+def normalize_media_query(query: str) -> str:
+    """Turn a model media query into a short searchable mood/action phrase."""
+    cleaned = re.sub(r"https?://\S+", " ", query.lower())
+    cleaned = re.sub(r"[^a-z0-9\s'-]+", " ", cleaned)
+    words = [word for word in cleaned.split() if len(word) > 1]
+    return " ".join(words[:_MAX_QUERY_WORDS])[:_MAX_QUERY_CHARS].strip()
 
 
 def first_media_url(obj: Any) -> str | None:
@@ -33,12 +44,13 @@ def first_media_url(obj: Any) -> str | None:
 async def search_klipy(kind: str, query: str) -> str | None:
     """Search Klipy for one playable GIF/sticker/clip URL."""
     key = get_settings().media.klipy_api_key
-    if not key or not query.strip():
+    normalized_query = normalize_media_query(query)
+    if not key or not normalized_query:
         return None
     normalized = kind if kind in {"gifs", "stickers", "clips"} else "gifs"
     url = f"https://api.klipy.com/api/v1/{key}/{normalized}/search"
     async with httpx.AsyncClient(timeout=6.0) as client:
-        response = await client.get(url, params={"q": query, "per_page": 24})
+        response = await client.get(url, params={"q": normalized_query, "per_page": 24})
         response.raise_for_status()
     data = response.json()
     results = data.get("data", {}).get("data") or data.get("data") or []

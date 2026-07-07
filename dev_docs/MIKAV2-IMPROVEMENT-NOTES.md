@@ -48,6 +48,7 @@
 
 1. Add a bounded retry when the structured turn is invalid or too repetitive.
 2. Add media-query normalization so GIF searches use short mood/action queries.
+   - Status: implemented in the shared Klipy search helper.
 3. Add small golden-fixture tests for sarcasm, flirting, media-only messages, and
    criticism handling.
 4. Add log fields for schema version and parse fallback rate.

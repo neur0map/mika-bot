@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Media query normalization
+
+- Shortened and cleaned model-generated GIF/sticker/clip queries before calling
+  Klipy so search terms stay mood/action based instead of caption-like.
+- Added tests for URL stripping, punctuation cleanup, and empty-noise handling.
+
 ### Balanced turn JSON extraction
 
 - Replaced greedy regex turn extraction with a balanced JSON-object scanner so
