@@ -31,7 +31,8 @@
 3. Add repetition pressure from recent assistant replies.
    - Reason: repeated phrasing is one of the fastest ways a companion bot feels
      scripted. Recent assistant text should steer generation away from repeats.
-   - Status: planned.
+   - Status: implemented with recent assistant phrasing hints that are not stored
+     back into memory.
 4. Feed reflection lessons back into the live prompt.
    - Reason: existing reflection stores lessons, but live replies do not read them,
      making self-learning mostly cosmetic.

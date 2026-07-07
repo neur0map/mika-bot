@@ -44,3 +44,16 @@ def test_compose_user_input_keeps_media_context() -> None:
     media_context = "[incoming media context: treat this socially]\n- image, embed: funny.gif"
     assert client._compose_user_input("", media_context) == media_context
     assert client._compose_user_input("look", media_context) == f"look\n{media_context}"
+
+
+def test_generation_input_warns_against_recent_repetition() -> None:
+    client = LLMClient()
+    history = [
+        {"role": "assistant", "content": "same dry roast again"},
+        {"role": "user", "content": "lol"},
+        {"role": "assistant", "content": "same rhythm different hat"},
+    ]
+    prompt = client._compose_generation_input("new message", history)
+    assert "recent assistant wording to avoid repeating" in prompt
+    assert "same rhythm different hat" in prompt
+    assert "same dry roast again" in prompt

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Repetition pressure
+
+- Added recent-assistant wording hints to the live generation input so responses
+  avoid repeating the same rhythm, joke shape, and phrasing across a channel.
+- Kept the stored user memory clean by not writing the anti-repetition hints into
+  local or Honcho memory.
+
 ### Turn intent telemetry
 
 - Added `mika_turn.v2` fields for `intent` and `confidence` so joke, sarcasm,

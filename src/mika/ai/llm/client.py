@@ -24,6 +24,8 @@ _BUSY_REPLY = "brain snagged. give me a second and try again."
 _ALLOWED_REACTIONS = {"👍", "👎", "😭", "💀", "👀", "🤔", "😂", "😬", "❤️", "🔥", "✅"}
 _MEDIA_TYPES = {"none", "gif", "sticker", "clip"}
 _TURN_SCHEMA_VERSION = "mika_turn.v2"
+_AVOID_PHRASE_LIMIT = 4
+_AVOID_PHRASE_CHARS = 180
 _TURN_INTENTS = {
     "chat",
     "joke",
@@ -77,9 +79,10 @@ class LLMClient:
         """Produce one structured reply decision and persist the exchange."""
         history = await self._build_history(channel_id)
         user_input = self._compose_user_input(text, media_context)
+        generation_input = self._compose_generation_input(user_input, history)
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         system = build_system_prompt(recall)
-        raw = await self._generate(system, history, f"{author_name}: {user_input}")
+        raw = await self._generate(system, history, f"{author_name}: {generation_input}")
         turn = self._parse_turn(raw)
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
@@ -90,6 +93,30 @@ class LLMClient:
         if clean_text and clean_media:
             return f"{clean_text}\n{clean_media}"
         return clean_text or clean_media or "[media/message with no text]"
+
+    def _compose_generation_input(self, user_input: str, history: list[Message]) -> str:
+        avoid = self._recent_assistant_phrases(history)
+        if not avoid:
+            return user_input
+        lines = "\n".join(f"- {phrase}" for phrase in avoid)
+        return (
+            f"{user_input}\n\n"
+            "[recent assistant wording to avoid repeating; keep the same personality "
+            f"but vary rhythm, joke shape, and phrasing.]\n{lines}"
+        )
+
+    def _recent_assistant_phrases(self, history: list[Message]) -> list[str]:
+        phrases: list[str] = []
+        for message in reversed(history):
+            if message.get("role") != "assistant":
+                continue
+            content = str(message.get("content") or "").strip()
+            if not content:
+                continue
+            phrases.append(content[:_AVOID_PHRASE_CHARS])
+            if len(phrases) == _AVOID_PHRASE_LIMIT:
+                break
+        return phrases
 
     async def _build_history(self, channel_id: str) -> list[Message]:
         rows = await self._local.recent(channel_id)
