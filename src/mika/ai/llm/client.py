@@ -196,8 +196,10 @@ class LLMClient:
         try:
             data = json.loads(candidate)
         except json.JSONDecodeError:
-            reply = self._extract_labeled_reply(text) or self._clean_reply_text(text)
-            return MikaTurn(reply=reply or _BUSY_REPLY, raw=raw)
+            labeled = self._extract_labeled_reply(text)
+            reply = labeled or self._clean_reply_text(text)
+            status = "labeled" if labeled else "fallback"
+            return MikaTurn(reply=reply or _BUSY_REPLY, parse_status=status, raw=raw)
         reply = str(data.get("reply") or data.get("message") or "").strip()
         reply = self._clean_reply_text(reply) or _BUSY_REPLY
         raw_reactions = data.get("reactions") if isinstance(data.get("reactions"), list) else []

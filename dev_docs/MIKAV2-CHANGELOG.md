@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Turn parse status telemetry
+
+- Added `parse_status` to structured turn results and shared telemetry so live
+  audits can separate clean JSON, labeled-output cleanup, and plain fallback.
+
 ### Media query normalization
 
 - Shortened and cleaned model-generated GIF/sticker/clip queries before calling

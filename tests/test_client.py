@@ -13,6 +13,7 @@ def test_parse_turn_strips_labeled_output_leak() -> None:
     )
     assert turn.reply == "exactly, the pasta is a 10 but night is questionable"
     assert turn.media.kind == "none"
+    assert turn.parse_status == "labeled"
 
 
 def test_parse_turn_accepts_json() -> None:
@@ -28,6 +29,7 @@ def test_parse_turn_accepts_json() -> None:
     assert turn.intent == "sarcasm"
     assert turn.confidence == 0.82
     assert turn.schema_version == "mika_turn.v2"
+    assert turn.parse_status == "json"
 
 
 def test_parse_turn_clamps_unknown_intent_and_confidence() -> None:

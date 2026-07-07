@@ -23,4 +23,5 @@ class MikaTurn:
     intent: str = "chat"
     confidence: float = 0.5
     schema_version: str = "mika_turn.v2"
+    parse_status: str = "json"
     raw: str = ""

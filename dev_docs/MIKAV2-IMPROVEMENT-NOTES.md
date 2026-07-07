@@ -52,6 +52,7 @@
 3. Add small golden-fixture tests for sarcasm, flirting, media-only messages, and
    criticism handling.
 4. Add log fields for schema version and parse fallback rate.
+   - Status: implemented with `schemaVersion` and `parseStatus` in turn telemetry.
 5. Avoid greedy regex extraction for model JSON.
    - Status: implemented with balanced object extraction and parser tests.
 
