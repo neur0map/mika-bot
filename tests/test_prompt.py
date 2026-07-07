@@ -25,3 +25,17 @@ def test_prompt_guides_media_reactivity_without_captioning() -> None:
     prompt = build_system_prompt("")
     assert "Incoming GIFs" in prompt
     assert "not captions to describe" in prompt
+
+
+def test_prompt_blocks_creepy_flirt_dependency() -> None:
+    prompt = build_system_prompt("")
+    assert "never possessive" in prompt
+    assert "no jealousy" in prompt
+    assert "no emotional dependency" in prompt
+
+
+def test_prompt_guides_discord_social_selectivity() -> None:
+    prompt = build_system_prompt("")
+    assert "Do not hijack human-to-human conversations" in prompt
+    assert "public channels stay less intimate" in prompt
+    assert "reaction-only" in prompt

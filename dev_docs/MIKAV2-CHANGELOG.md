@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Social persona guardrails
+
+- Added explicit prompt rules that playful flirting must stay non-possessive,
+  non-jealous, non-guilting, and free of emotional-dependency cues.
+- Added public-channel selectivity rules so Mika avoids hijacking human-to-human
+  conversations and can choose no action or a reaction-only turn when uninvited.
+
 ### Social turn contract fixtures
 
 - Added golden tests for sarcasm, flirting, and media-reaction structured turns so

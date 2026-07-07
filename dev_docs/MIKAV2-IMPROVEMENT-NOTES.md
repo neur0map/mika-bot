@@ -26,6 +26,19 @@
   <https://ar5iv.labs.arxiv.org/html/2505.13157>
   <https://arxiv.org/html/2409.06820v4>
   <https://arxiv.org/html/2605.29256>
+- Conversation tone and Discord bot UX guidance: keep voice stable while tone
+  adapts, stay short in public channels, use reactions as turns, and avoid noisy
+  bot participation.
+  <https://www.nngroup.com/articles/tone-of-voice-dimensions/>
+  <https://wildandfreetools.com/blog/system-prompt-discord-telegram-whatsapp-bot/>
+- Responsible persona design: playful companion behavior should avoid
+  possessiveness, jealousy, hidden dependency cues, manipulative guilt, and false
+  intimacy.
+  <https://www.microsoft.com/en-us/research/wp-content/uploads/2018/11/Bot_Guidelines_Nov_2018.pdf>
+  <https://someones.xyz/design-principles-for-emotionally-safe-avatars-and-bots>
+- Agent workflow guidance: prefer bounded workflow stages, typed outputs,
+  validation, and evaluation loops before adding open-ended autonomy.
+  <https://www.anthropic.com/engineering/building-effective-agents>
 
 ## High-value changes
 
