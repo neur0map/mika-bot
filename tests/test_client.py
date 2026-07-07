@@ -57,3 +57,11 @@ def test_generation_input_warns_against_recent_repetition() -> None:
     assert "recent assistant wording to avoid repeating" in prompt
     assert "same rhythm different hat" in prompt
     assert "same dry roast again" in prompt
+
+
+def test_memory_context_includes_self_reflection_lessons() -> None:
+    client = LLMClient()
+    context = client._memory_context("remembered thing", "- vary reactions more")
+    assert "remembered thing" in context
+    assert "Recent self-reflection lessons" in context
+    assert "vary reactions more" in context

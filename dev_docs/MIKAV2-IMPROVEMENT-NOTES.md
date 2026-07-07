@@ -36,7 +36,8 @@
 4. Feed reflection lessons back into the live prompt.
    - Reason: existing reflection stores lessons, but live replies do not read them,
      making self-learning mostly cosmetic.
-   - Status: planned.
+   - Status: implemented by adding the latest stored reflection as a separate live
+     prompt context section.
 5. Add lightweight reaction feedback interpretation.
    - Reason: raw reactions are logged, but self-learning needs coarse positive,
      negative, confused, hype, and laugh signals.

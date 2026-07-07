@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Live self-reflection lessons
+
+- Fed the latest stored self-reflection lessons into the live system prompt next
+  to recalled memory so the learning loop changes future replies.
+- Kept reflection lessons separate from user recall to make the prompt source
+  auditable.
+
 ### Repetition pressure
 
 - Added recent-assistant wording hints to the live generation input so responses

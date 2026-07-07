@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+from mika.ai.learning.reflection import last_reflection
 from mika.ai.llm.chat.pipeline import run_turn
 from mika.ai.llm.chat.prompt import build_system_prompt
 from mika.ai.llm.memory.honcho import HonchoMemory
@@ -81,7 +82,8 @@ class LLMClient:
         user_input = self._compose_user_input(text, media_context)
         generation_input = self._compose_generation_input(user_input, history)
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
-        system = build_system_prompt(recall)
+        reflection, _ = await last_reflection()
+        system = build_system_prompt(self._memory_context(recall, reflection))
         raw = await self._generate(system, history, f"{author_name}: {generation_input}")
         turn = self._parse_turn(raw)
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
@@ -104,6 +106,14 @@ class LLMClient:
             "[recent assistant wording to avoid repeating; keep the same personality "
             f"but vary rhythm, joke shape, and phrasing.]\n{lines}"
         )
+
+    def _memory_context(self, recall: str, reflection: str | None) -> str:
+        sections: list[str] = []
+        if recall.strip():
+            sections.append(recall.strip())
+        if reflection and reflection.strip():
+            sections.append("Recent self-reflection lessons:\n" + reflection.strip())
+        return "\n\n".join(sections)
 
     def _recent_assistant_phrases(self, history: list[Message]) -> list[str]:
         phrases: list[str] = []
