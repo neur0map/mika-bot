@@ -167,12 +167,13 @@ def setup(bot: BotApp) -> None:
                 await message.add_reaction(emoji)
             except discord.HTTPException:
                 logger.debug("reaction failed", exc_info=True)
-        sent = await message.reply(turn.reply[:_MAX_REPLY] or "...")
+        sent = await message.reply(turn.reply[:_MAX_REPLY]) if turn.reply.strip() else None
         media_url = await _send_media(message, turn.media.kind, turn.media.query)
+        action_id = str(sent.id) if sent else f"action-{message.id}"
         now = _iso()
         await archive_message(
             {
-                "id": f"py-{sent.id}",
+                "id": f"py-{action_id}",
                 "role": "assistant",
                 "author": get_settings().persona.name,
                 "author_id": str(bot.user.id),
@@ -182,7 +183,7 @@ def setup(bot: BotApp) -> None:
                 "guild_name": message.guild.name if message.guild else None,
                 "channel_id": str(message.channel.id),
                 "channel_name": getattr(message.channel, "name", None),
-                "discord_message_id": str(sent.id),
+                "discord_message_id": str(sent.id) if sent else None,
                 "reply_to_discord_message_id": str(message.id),
                 "media": [
                     {
@@ -203,6 +204,7 @@ def setup(bot: BotApp) -> None:
                     "turnConfidence": turn.confidence,
                     "turnSchemaVersion": turn.schema_version,
                     "turnParseStatus": turn.parse_status,
+                    "actionOnly": not bool(turn.reply.strip()),
                     "inboundMediaCount": len(inbound_media),
                     "mediaContext": media_context[:600] or None,
                     "mediaSent": bool(media_url),
@@ -217,7 +219,7 @@ def setup(bot: BotApp) -> None:
                 "guild_name": message.guild.name if message.guild else None,
                 "channel_id": str(message.channel.id),
                 "channel_name": getattr(message.channel, "name", None),
-                "discord_message_id": str(sent.id),
+                "discord_message_id": str(sent.id) if sent else None,
                 "related_discord_message_id": str(message.id),
                 "author": get_settings().persona.name,
                 "author_id": str(bot.user.id),
@@ -229,6 +231,7 @@ def setup(bot: BotApp) -> None:
                     "confidence": turn.confidence,
                     "schemaVersion": turn.schema_version,
                     "parseStatus": turn.parse_status,
+                    "actionOnly": not bool(turn.reply.strip()),
                     "inboundMediaCount": len(inbound_media),
                     "mediaContext": media_context[:600] or None,
                 },

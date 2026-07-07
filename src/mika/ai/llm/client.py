@@ -201,7 +201,8 @@ class LLMClient:
             f"{user_text}\n\n"
             "Return strict JSON only with keys: schema_version, reply, reactions, "
             "media, intent, confidence. schema_version is 'mika_turn.v2'. reply is "
-            "the Discord message text. reactions is 0-1 emoji from "
+            "the Discord message text; it may be an empty string only when a reaction "
+            "or media choice is enough. reactions is 0-1 emoji from "
             "[👍,👎,😭,💀,👀,🤔,😂,😬,❤️,🔥,✅]. media is "
             "{type:'none'|'gif'|'sticker'|'clip', query:null|string}. intent is one of "
             "chat, joke, sarcasm, flirt, hype, comfort, question, criticism, "
@@ -224,7 +225,6 @@ class LLMClient:
             status = "labeled" if labeled else "fallback"
             return MikaTurn(reply=reply or _BUSY_REPLY, parse_status=status, raw=raw)
         reply = str(data.get("reply") or data.get("message") or "").strip()
-        reply = self._clean_reply_text(reply) or _BUSY_REPLY
         raw_reactions = data.get("reactions") if isinstance(data.get("reactions"), list) else []
         reactions = tuple(str(item) for item in raw_reactions if str(item) in _ALLOWED_REACTIONS)[
             :1
@@ -235,6 +235,9 @@ class LLMClient:
             media_type = "none"
         query_value = raw_media.get("query")
         query = str(query_value).strip()[:80] if query_value else None
+        reply = self._clean_reply_text(reply)
+        if not reply and not reactions and media_type == "none":
+            reply = _BUSY_REPLY
         intent = str(data.get("intent") or "chat").strip().lower()
         if intent not in _TURN_INTENTS:
             intent = "chat"

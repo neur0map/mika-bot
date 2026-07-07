@@ -43,6 +43,10 @@
      negative, confused, hype, and laugh signals.
    - Status: implemented as positive, laugh, confused, negative, and other signals
      stored in reaction telemetry.
+6. Support reaction/media-only turns.
+   - Reason: a human often answers a GIF or joke with only an emoji or matching GIF;
+     forcing a text reply makes the bot feel less reactive.
+   - Status: implemented without dropping archive/telemetry rows.
 
 ## Medium-value changes
 

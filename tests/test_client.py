@@ -54,6 +54,25 @@ def test_parse_turn_extracts_balanced_json_from_prose() -> None:
     assert turn.confidence == 0.7
 
 
+def test_parse_turn_allows_reaction_only_action() -> None:
+    client = LLMClient()
+    turn = client._parse_turn(
+        '{"reply":"","reactions":["💀"],"media":{"type":"none"},'
+        '"intent":"media_reaction","confidence":0.9}'
+    )
+    assert turn.reply == ""
+    assert turn.reactions == ("💀",)
+    assert turn.intent == "media_reaction"
+
+
+def test_parse_turn_falls_back_when_no_action_exists() -> None:
+    client = LLMClient()
+    turn = client._parse_turn('{"reply":"","reactions":[],"media":{"type":"none"}}')
+    assert turn.reply
+    assert turn.media.kind == "none"
+    assert turn.reactions == ()
+
+
 def test_json_extractor_ignores_trailing_objects() -> None:
     client = LLMClient()
     text = '{"reply":"first","media":{"type":"none"}} {"reply":"second"}'

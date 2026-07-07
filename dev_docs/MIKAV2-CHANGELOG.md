@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Reaction/media-only turns
+
+- Allowed structured turns with an empty reply when a reaction or media action is
+  enough, avoiding forced `...` placeholder messages.
+- Archived action-only turns with synthetic action ids and `actionOnly` telemetry
+  so they remain visible in training logs.
+
 ### Structured-output retry
 
 - Added one bounded retry when the first model response leaks labels or falls back
