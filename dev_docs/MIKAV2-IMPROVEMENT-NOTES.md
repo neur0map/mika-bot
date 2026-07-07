@@ -17,6 +17,15 @@
 - AdaMem: dialogue agents benefit from separating recent working memory,
   episodic/persona memory, and question-conditioned retrieval.
   <https://www.arxiv.org/pdf/2603.16496>
+- Dynamic Persona Coherence: good roleplay separates stable identity from adaptive
+  short-term affect so characters can react without drifting or becoming rigid.
+  <https://aclanthology.org/2026.acl-long.1336.pdf>
+- Role-playing evaluation research: useful evaluations include emotional
+  understanding, decision-making, consistency, entertainment value, human-likeness,
+  and long-session coherence rather than one-turn quality only.
+  <https://ar5iv.labs.arxiv.org/html/2505.13157>
+  <https://arxiv.org/html/2409.06820v4>
+  <https://arxiv.org/html/2605.29256>
 
 ## High-value changes
 
@@ -72,3 +81,17 @@
 3. Buttons/components for feedback.
    - Useful for product UX, less urgent than fixing natural chat tone and media
      reactivity.
+
+## Future candidates
+
+1. Lightweight session affect tracking.
+   - Dynamic persona research suggests separating stable identity from short-term
+     affect. Mikav2 now logs intent/confidence; a later pass can summarize recent
+     turn intents into a room mood without adding heavy psychological state.
+2. Session-level evaluator fixtures.
+   - Roleplay evaluation work shows single turns miss long-horizon drift,
+     repetition, and loss of persona. A later CI eval can simulate 6-10 turns and
+     score consistency, entertainment, media timing, and repetition.
+3. Selective exemplar memory.
+   - Store only high-signal good replies or corrected misses as examples, not every
+     raw turn, so retrieval improves style without bloating the prompt.
