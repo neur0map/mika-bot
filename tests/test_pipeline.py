@@ -22,8 +22,10 @@ class FakeProvider:
         tools: list[Message] | None = None,
         temperature: float = 0.8,
         max_tokens: int = 600,
+        response_format: str | None = None,
     ) -> ChatResult:
         self.calls.append(messages)
+        self.response_formats = [*getattr(self, "response_formats", []), response_format]
         return self._results.pop(0)
 
 
@@ -68,3 +70,21 @@ async def test_tool_loop_runs_tool_then_answers() -> None:
     )
     assert out == "done"
     assert any(message.get("role") == "tool" for message in provider.calls[1])
+
+
+async def test_json_mode_is_requested_without_tools() -> None:
+    provider = FakeProvider([ChatResult(content='{"reply":"ok"}', tool_calls=[])])
+    out = await run_turn(
+        provider,
+        system="s",
+        history=[],
+        user_text="hi",
+        registry=ToolRegistry(),
+        use_tools=False,
+        model="m",
+        temperature=0.5,
+        max_tokens=10,
+        require_json=True,
+    )
+    assert out == '{"reply":"ok"}'
+    assert provider.response_formats == ["json_object"]

@@ -40,6 +40,7 @@ class ChatProvider(Protocol):
         tools: list[Message] | None = None,
         temperature: float = 0.8,
         max_tokens: int = 600,
+        response_format: str | None = None,
     ) -> ChatResult:
         """Return the model's reply (text and/or tool calls) for the messages."""
         ...

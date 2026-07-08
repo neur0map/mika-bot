@@ -19,6 +19,7 @@ async def run_turn(
     model: str,
     temperature: float,
     max_tokens: int,
+    require_json: bool = False,
 ) -> str:
     """Drive one model turn, executing any tool calls, and return the reply text."""
     messages: list[Message] = [
@@ -35,6 +36,7 @@ async def run_turn(
             tools=schemas,
             temperature=temperature,
             max_tokens=max_tokens,
+            response_format="json_object" if (require_json and schemas is None) else None,
         )
         if not result.tool_calls:
             return (result.content or "").strip()
@@ -57,6 +59,11 @@ async def run_turn(
             messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
 
     final = await provider.complete(
-        messages, model=model, tools=None, temperature=temperature, max_tokens=max_tokens
+        messages,
+        model=model,
+        tools=None,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format="json_object" if require_json else None,
     )
     return (final.content or "").strip()

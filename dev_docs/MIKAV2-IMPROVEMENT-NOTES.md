@@ -1,6 +1,20 @@
-# Mikav2 improvement research notes
+# Mikav2 improvement notes
 
-## Sources reviewed so far
+## 2026-07-08 live-log follow-up
+
+- Live MiniMax M3 logs showed successful OpenRouter calls but `fallback` parse
+  status in Mikav2 telemetry, meaning answers were being accepted as unstructured
+  text after the model missed the JSON contract.
+- GIF-like prompts were routed through `web_search` (`watch me whip ... gif` web
+  queries) instead of the Klipy media action path.
+- Fix direction: require JSON object mode where provider-compatible, perform
+  repair retries without tools, and route explicit GIF/sticker/clip requests away
+  from web search toward media selection.
+- Dry-run after that fix showed MiniMax could still attach a GIF to a plain math
+  answer, so outbound media now passes a final intent/confidence gate before
+  Discord send.
+
+## Research-backed priorities
 
 - Structured output best practices: schema-first design, validation at the model
   boundary, bounded enums/arrays/strings, and schema versioning.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from typing import Any
 
 from mika.ai.learning.reflection import last_reflection
@@ -39,6 +40,18 @@ _TURN_INTENTS = {
     "media_reaction",
     "serious",
 }
+_MEDIA_OK_INTENTS = {"media_reaction", "hype", "joke", "flirt", "sarcasm"}
+_MEDIA_INTENT_CONFIDENCE = 0.6
+_MEDIA_REQUEST_RE = re.compile(
+    r"\b(?:send|post|drop|find|get|use|give|match).*\b(gif|sticker|clip)\b|"
+    r"\b(gif|sticker|clip)\s+me\b",
+    re.I,
+)
+_MEDIA_NOISE_RE = re.compile(
+    r"\b(?:send|post|drop|find|get|use|give|match|a|an|the|gif|sticker|clip|"
+    r"of|for|please|pls)\b",
+    re.I,
+)
 
 
 class LLMClient:
@@ -84,11 +97,19 @@ class LLMClient:
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         reflection, _ = await last_reflection()
         system = build_system_prompt(self._memory_context(recall, reflection))
-        raw = await self._generate(system, history, f"{author_name}: {generation_input}")
+        raw = await self._generate(
+            system,
+            history,
+            f"{author_name}: {generation_input}",
+            use_tools=self._should_use_tools(generation_input),
+            require_json=True,
+        )
         turn = self._parse_turn(raw)
         turn = await self._retry_if_unstructured(
             turn, system, history, author_name, generation_input
         )
+        turn = self._force_requested_media(turn, generation_input)
+        turn = self._gate_media_choice(turn, generation_input)
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
 
@@ -134,9 +155,40 @@ class LLMClient:
             "valid JSON object with schema_version, reply, reactions, media, intent, "
             "and confidence.]"
         )
-        retry_raw = await self._generate(system, history, retry_input)
+        retry_raw = await self._generate(
+            system, history, retry_input, use_tools=False, require_json=True
+        )
         retry_turn = self._parse_turn(retry_raw)
         return retry_turn if retry_turn.parse_status == "json" else turn
+
+    def _should_use_tools(self, user_input: str) -> bool:
+        if _MEDIA_REQUEST_RE.search(user_input):
+            return False
+        return bool(self._tools)
+
+    def _force_requested_media(self, turn: MikaTurn, user_input: str) -> MikaTurn:
+        if turn.media.kind != "none" or not _MEDIA_REQUEST_RE.search(user_input):
+            return turn
+        kind_match = re.search(r"\b(gif|sticker|clip)\b", user_input, flags=re.I)
+        kind = kind_match.group(1).lower() if kind_match else "gif"
+        query = self._media_request_query(user_input)
+        if not query:
+            return turn
+        return replace(turn, media=MediaChoice(kind, query), intent="media_reaction")
+
+    def _gate_media_choice(self, turn: MikaTurn, user_input: str) -> MikaTurn:
+        if turn.media.kind == "none" or _MEDIA_REQUEST_RE.search(user_input):
+            return turn
+        if turn.intent in _MEDIA_OK_INTENTS and turn.confidence >= _MEDIA_INTENT_CONFIDENCE:
+            return turn
+        return replace(turn, media=MediaChoice())
+
+    def _media_request_query(self, user_input: str) -> str:
+        first_line = user_input.splitlines()[0]
+        first_line = re.sub(r"https?://\S+", " ", first_line)
+        cleaned = _MEDIA_NOISE_RE.sub(" ", first_line)
+        cleaned = re.sub(r"[^\w\s'-]", " ", cleaned)
+        return re.sub(r"\s+", " ", cleaned).strip()[:80]
 
     def _recent_assistant_phrases(self, history: list[Message]) -> list[str]:
         phrases: list[str] = []
@@ -161,9 +213,18 @@ class LLMClient:
                 history.append({"role": "assistant", "content": content})
         return history
 
-    async def _generate(self, system: str, history: list[Message], user_text: str) -> str:
+    async def _generate(
+        self,
+        system: str,
+        history: list[Message],
+        user_text: str,
+        *,
+        use_tools: bool | None = None,
+        require_json: bool = False,
+    ) -> str:
         settings = self._settings
         structured_user_text = self._structured_instruction(user_text)
+        tools_enabled = bool(self._tools) if use_tools is None else use_tools
         try:
             return await run_turn(
                 self._provider,
@@ -171,10 +232,11 @@ class LLMClient:
                 history=history,
                 user_text=structured_user_text,
                 registry=self._tools,
-                use_tools=bool(self._tools),
+                use_tools=tools_enabled,
                 model=settings.llm.model,
                 temperature=settings.llm.temperature,
                 max_tokens=settings.llm.max_tokens,
+                require_json=require_json,
             )
         except Exception as primary_error:
             logger.warning("primary provider failed: %s", primary_error)
@@ -191,6 +253,7 @@ class LLMClient:
                 model=settings.llm.fallback_model,
                 temperature=settings.llm.temperature,
                 max_tokens=settings.llm.max_tokens,
+                require_json=require_json,
             )
         except Exception as fallback_error:
             logger.error("fallback provider failed: %s", fallback_error)

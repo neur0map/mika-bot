@@ -1,6 +1,22 @@
 # Mikav2 changelog
 
-## Unreleased
+## 2026-07-08 — MiniMax structured-output and GIF routing hotfix
+
+- Requested OpenAI-compatible JSON object mode for structured turn generation
+  and malformed-output repair retries so MiniMax M3 is less likely to fall back
+  into plain Discord text.
+- Disabled web-search tool routing for direct GIF/sticker/clip requests; Mika now
+  treats those as media actions instead of searching the web for GIF pages.
+- Added a small imperative media fallback for requests like "send a gif of X" so
+  Klipy still receives a clean media query when the model forgets the `media`
+  field.
+- Added an outgoing media gate so MiniMax cannot attach random GIFs to plain
+  factual/chat answers unless the user requested media or the turn has a confident
+  social media-worthy intent.
+- Added regression coverage for JSON-mode requests, media-request tool routing,
+  GIF media forcing, and random-media suppression.
+
+## 2026-07-07 — Social persona guardrails from Discord research
 
 ### Social persona guardrails
 
