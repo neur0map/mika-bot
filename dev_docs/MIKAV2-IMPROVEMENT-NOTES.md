@@ -1,5 +1,51 @@
 # Mikav2 improvement notes
 
+## 2026-07-19 retained-log audit: baseline and applied fixes
+
+### Measured behavior
+
+- Examined 241 archived `mikav2_turn_decision` records. Of the 107 records with
+  modern structured-turn telemetry, 45 were `fallback` rather than clean JSON.
+- Reply length was too high for a public Discord bot: median 47 characters, but 64
+  replies exceeded 120 characters, 16 exceeded 200, and the maximum was 643.
+- Five incoming-media turns were recorded; only one selected any social action
+  (a reaction), and none selected a matching GIF. Incoming GIF/image metadata was
+  supplied only as labels, making caption-style replies likely when the turn fell
+  back to plain text.
+- The visible `brain snagged` phrase appeared repeatedly. It was caused by valid
+  empty/no-action turn output being coerced to a text failure, not by a provider
+  outage in every instance.
+- The tool router enabled web schemas for virtually every non-GIF message. With
+  MiniMax M3 this removed first-pass JSON-object mode for casual turns, directly
+  contributing to fallback replies and overlong prose.
+
+### Applied behavior changes
+
+1. Route tools only for current/factual needs; keep jokes, banter, and incoming
+   media on the schema-enforced structured path.
+2. Treat `silence` as a real social decision and retain its telemetry without
+   publishing a bot message.
+3. Cap casual/social replies at 180 characters after parsing, while leaving
+   explanation-oriented intents a 500-character ceiling.
+4. Require the prompt to favor one sentence, a reaction, a well-timed matching
+   GIF, or silence for casual turns; never describe an incoming GIF/image unless
+   the user asks what it contains.
+5. Keep GIF/reactive behavior model-selected rather than emitting a mechanical
+   emoji for every attachment. The next live sample will measure whether the now
+   schema-enforced media decisions increase appropriate reaction/GIF usage.
+
+### Validation baseline for the next live sample
+
+- Monitor `parseStatus`: `fallback` should fall sharply because social turns no
+  longer have tool schemas attached.
+- Monitor social reply lengths: public banter should remain at or under 180
+  characters except for genuinely explanatory intents.
+- Monitor incoming-media turns: distinguish text-only replies, reactions,
+  matching media, and silence; inspect mismatches manually instead of optimizing
+  for raw GIF count.
+- Treat `brain snagged` as an error-only phrase. A valid intentional no-action
+  must appear as `intent: silence`, never as a visible failure reply.
+
 ## 2026-07-08 live-log follow-up
 
 - Live MiniMax M3 logs showed successful OpenRouter calls but `fallback` parse

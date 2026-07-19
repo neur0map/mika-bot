@@ -1,5 +1,28 @@
 # Mikav2 changelog
 
+## 2026-07-19 — Conversation pipeline audit and social-turn reliability
+
+- Audited 241 retained Mikav2 decisions and identified the main live quality failures:
+  64 replies exceeded 120 characters, 16 exceeded 200, and the longest casual
+  reply reached 643 characters; 45 recent turns fell back from the structured
+  turn contract; and only one of five incoming-media turns selected a reaction or
+  media action.
+- Restricted web-tool access to current/factual requests (weather, news, current
+  scores, prices, etc.). Casual banter and jokes now go directly through JSON-mode
+  structured-turn generation instead of disabling JSON mode by loading tool schemas.
+- Added `silence` as a valid `mika_turn.v2` intent. An intentional no-action turn
+  is no longer rewritten into the visible `brain snagged` failure message.
+- Updated the Discord executor so silent turns create decision telemetry but do not
+  send a Discord reply or archive a fake assistant chat message.
+- Added a social reply budget: chat, jokes, sarcasm, flirting, hype, criticism, and
+  media reactions are capped at 180 characters; longer explanation-oriented turns
+  retain a 500-character ceiling.
+- Tightened the live persona/turn contract around concise Discord behavior, rare
+  filler phrases, selective silence, reaction/GIF opportunities, and no captioning
+  of incoming GIFs/images unless asked.
+- Added regression coverage for explicit silence, joke/banter tool suppression,
+  current-fact tool allowance, and the social reply-length cap.
+
 ## 2026-07-08 — MiniMax structured-output and GIF routing hotfix
 
 - Requested OpenAI-compatible JSON object mode for structured turn generation

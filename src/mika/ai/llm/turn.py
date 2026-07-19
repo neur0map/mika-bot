@@ -25,3 +25,13 @@ class MikaTurn:
     schema_version: str = "mika_turn.v2"
     parse_status: str = "json"
     raw: str = ""
+
+    @property
+    def is_silent(self) -> bool:
+        """Whether this turn intentionally leaves the conversation alone."""
+        return (
+            self.intent == "silence"
+            and not self.reply
+            and not self.reactions
+            and self.media.kind == "none"
+        )

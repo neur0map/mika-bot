@@ -39,9 +39,21 @@ _TURN_INTENTS = {
     "criticism",
     "media_reaction",
     "serious",
+    "silence",
 }
 _MEDIA_OK_INTENTS = {"media_reaction", "hype", "joke", "flirt", "sarcasm"}
 _MEDIA_INTENT_CONFIDENCE = 0.6
+_SHORT_REPLY_INTENTS = {
+    "chat",
+    "joke",
+    "sarcasm",
+    "flirt",
+    "hype",
+    "criticism",
+    "media_reaction",
+}
+_SHORT_REPLY_LIMIT = 180
+_LONG_REPLY_LIMIT = 500
 _MEDIA_REQUEST_RE = re.compile(
     r"\b(?:send|post|drop|find|get|use|give|match).*\b(gif|sticker|clip)\b|"
     r"\b(gif|sticker|clip)\s+me\b",
@@ -50,6 +62,15 @@ _MEDIA_REQUEST_RE = re.compile(
 _MEDIA_NOISE_RE = re.compile(
     r"\b(?:send|post|drop|find|get|use|give|match|a|an|the|gif|sticker|clip|"
     r"of|for|please|pls)\b",
+    re.I,
+)
+_CURRENT_FACT_RE = re.compile(
+    r"\b(?:today(?:'s)?|current|latest|news|weather|forecast|score|scores|"
+    r"standings|price|prices|stock|release date|who won|when did)\b",
+    re.I,
+)
+_SOCIAL_OR_JOKE_RE = re.compile(
+    r"\b(?:lol|lmao|lmfao|joke|kidding|jk|meme|bro|bruh|😭|💀|😂)\b",
     re.I,
 )
 
@@ -110,6 +131,7 @@ class LLMClient:
         )
         turn = self._force_requested_media(turn, generation_input)
         turn = self._gate_media_choice(turn, generation_input)
+        turn = replace(turn, reply=self._limit_reply(turn.reply, turn.intent))
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
 
@@ -164,7 +186,9 @@ class LLMClient:
     def _should_use_tools(self, user_input: str) -> bool:
         if _MEDIA_REQUEST_RE.search(user_input):
             return False
-        return bool(self._tools)
+        if _SOCIAL_OR_JOKE_RE.search(user_input):
+            return False
+        return bool(self._tools) and bool(_CURRENT_FACT_RE.search(user_input))
 
     def _force_requested_media(self, turn: MikaTurn, user_input: str) -> MikaTurn:
         if turn.media.kind != "none" or not _MEDIA_REQUEST_RE.search(user_input):
@@ -189,6 +213,17 @@ class LLMClient:
         cleaned = _MEDIA_NOISE_RE.sub(" ", first_line)
         cleaned = re.sub(r"[^\w\s'-]", " ", cleaned)
         return re.sub(r"\s+", " ", cleaned).strip()[:80]
+
+    def _limit_reply(self, reply: str, intent: str) -> str:
+        limit = _SHORT_REPLY_LIMIT if intent in _SHORT_REPLY_INTENTS else _LONG_REPLY_LIMIT
+        if len(reply) <= limit:
+            return reply
+        clipped = reply[: limit - 1].rstrip()
+        boundary = max(clipped.rfind(". "), clipped.rfind("! "), clipped.rfind("? "))
+        if boundary >= limit // 3:
+            return clipped[: boundary + 1].rstrip()
+        word_boundary = clipped.rfind(" ")
+        return (clipped[:word_boundary] if word_boundary > 0 else clipped) + "…"
 
     def _recent_assistant_phrases(self, history: list[Message]) -> list[str]:
         phrases: list[str] = []
@@ -269,12 +304,14 @@ class LLMClient:
             "[👍,👎,😭,💀,👀,🤔,😂,😬,❤️,🔥,✅]. media is "
             "{type:'none'|'gif'|'sticker'|'clip', query:null|string}. intent is one of "
             "chat, joke, sarcasm, flirt, hype, comfort, question, criticism, "
-            "media_reaction, serious. confidence is a number from 0 to 1 for the social "
-            "read, not factual certainty. Use reactions/GIFs only when a real Discord user "
-            "would. For incoming media, decide if it is probably a joke, sarcasm, flirting, "
-            "hype, confusion, or a serious share; do not describe or caption the GIF/image "
-            "unless asked. Choose between text, one reaction, matching with a GIF, or "
-            "staying dry. No explanations of this JSON."
+            "media_reaction, serious, silence. confidence is a number from 0 to 1 for the social "
+            "read, not factual certainty. For casual banter, use one sharp sentence (usually "
+            "under 180 characters), one reaction, or silence; paragraphs need a real reason. "
+            "Choose silence only when you were not directly addressed and adding anything would be "
+            "clutter. Use reactions/GIFs only when a real Discord user would. For incoming media, "
+            "decide if it is probably a joke, sarcasm, flirting, hype, confusion, or a serious "
+            "share; do not describe or caption the GIF/image unless asked. Prefer a reaction, a "
+            "short social reply, a matching GIF, or silence. No explanations of this JSON."
         )
 
     def _parse_turn(self, raw: str) -> MikaTurn:
@@ -299,11 +336,12 @@ class LLMClient:
         query_value = raw_media.get("query")
         query = str(query_value).strip()[:80] if query_value else None
         reply = self._clean_reply_text(reply)
-        if not reply and not reactions and media_type == "none":
-            reply = _BUSY_REPLY
         intent = str(data.get("intent") or "chat").strip().lower()
         if intent not in _TURN_INTENTS:
             intent = "chat"
+        silent = intent == "silence" and not reply and not reactions and media_type == "none"
+        if not reply and not reactions and media_type == "none" and not silent:
+            reply = _BUSY_REPLY
         confidence = self._bounded_confidence(data.get("confidence"))
         schema_version = str(data.get("schema_version") or _TURN_SCHEMA_VERSION).strip()
         return MikaTurn(

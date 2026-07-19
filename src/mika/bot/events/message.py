@@ -126,6 +126,12 @@ async def _send_media(message: discord.Message, media_type: str, query: str | No
     return url
 
 
+async def _archive_visible_turn(is_silent: bool, record: dict[str, Any]) -> None:
+    """Store only actions that were visible to Discord users."""
+    if not is_silent:
+        await archive_message(record)
+
+
 def setup(bot: BotApp) -> None:
     """Register the on_message handler."""
     free_channels = set(get_settings().discord.response_channel_id_list)
@@ -171,7 +177,8 @@ def setup(bot: BotApp) -> None:
         media_url = await _send_media(message, turn.media.kind, turn.media.query)
         action_id = str(sent.id) if sent else f"action-{message.id}"
         now = _iso()
-        await archive_message(
+        await _archive_visible_turn(
+            turn.is_silent,
             {
                 "id": f"py-{action_id}",
                 "role": "assistant",
@@ -209,7 +216,7 @@ def setup(bot: BotApp) -> None:
                     "mediaContext": media_context[:600] or None,
                     "mediaSent": bool(media_url),
                 },
-            }
+            },
         )
         await archive_event(
             {

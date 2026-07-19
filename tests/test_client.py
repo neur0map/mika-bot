@@ -186,3 +186,34 @@ def test_media_gate_keeps_confident_social_gif() -> None:
     gated = client._gate_media_choice(turn, "we actually won")
     assert gated.media.kind == "gif"
     assert gated.media.query == "excited dance"
+
+
+def test_parse_turn_allows_explicit_silence() -> None:
+    client = LLMClient()
+    turn = client._parse_turn(
+        '{"schema_version":"mika_turn.v2","reply":"","reactions":[],'
+        '"media":{"type":"none"},"intent":"silence","confidence":0.9}'
+    )
+    assert turn.reply == ""
+    assert turn.intent == "silence"
+    assert turn.parse_status == "json"
+
+
+def test_banter_and_jokes_skip_web_search_tools() -> None:
+    client = LLMClient()
+    assert (
+        client._should_use_tools("can a laptop run on electricity candy as a power source joke")
+        is False
+    )
+    assert client._should_use_tools("ronaldo is washed lol") is False
+
+
+def test_current_factual_question_can_use_web_search_tools() -> None:
+    client = LLMClient()
+    assert client._should_use_tools("what is today's weather in madrid") is True
+
+
+def test_social_reply_is_trimmed_to_a_short_discord_turn() -> None:
+    client = LLMClient()
+    reply = "one " * 100
+    assert len(client._limit_reply(reply, "joke")) <= 180
