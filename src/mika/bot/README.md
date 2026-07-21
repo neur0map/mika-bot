@@ -1,12 +1,10 @@
-# bot/ - server domain (the bot account)
+# bot/
 
-The compliant, sellable core: a Discord **bot account** that serves everyone in a
-guild. Wires the gateway and routes interactions/events into `ai/` and `features/`.
+The Discord bot-account domain contains the event lifecycle and conversational execution layer.
 
-- `client.py` - intents, command registration, event wiring.
-- `commands/` - server slash commands everyone can use, one file each.
-- `events/` - gateway event handlers, one file each.
-- `components/` - buttons, modals, views.
-- `features/` - pluggable server features (tickets, moderation, ...).
+- `client.py` creates the Discord client and starts conversation services.
+- `events/` handles ready, messages, and reaction feedback.
+- `media.py` executes selected GIF/sticker/clip actions.
+- `scheduler.py` runs optional learning/reflection jobs.
 
-Depends on `core`, `persistence`, `ai`. Must **never** import `userbot/`.
+Discord user-facing behavior is conversation-only. Operator commands belong under `mika.cli` and are not Discord commands.

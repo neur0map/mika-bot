@@ -11,10 +11,10 @@ If a rule here ever conflicts with a request, follow the rule and say so.
 
 ## 1. What this project is
 
-**Mika** is a self-hostable, multi-purpose Discord bot: an LLM chat companion
-*plus* a bot framework (slash commands, tickets, moderation, fun/utility, server
-QoL), with a one-command installer, a setup wizard, and a localhost web page for
-settings and overviews.
+Mika is a self-hostable Discord conversation companion with a one-command
+installer, setup wizard, and localhost page for settings and operational overview.
+It is conversation-only: Discord slash commands, tickets, moderation, and
+server-automation features are not part of the product.
 
 - **Language:** Python (single stack — no second runtime in the product).
 - **Runtime target:** a Linux VPS, managed via systemd.
