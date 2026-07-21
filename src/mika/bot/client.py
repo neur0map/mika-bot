@@ -10,6 +10,7 @@ import uvicorn
 from discord.ext import commands
 
 from mika.ai.llm.client import LLMClient
+from mika.ai.llm.social_policy import SocialActionPolicy
 from mika.bot.events import register_events
 from mika.bot.scheduler import start_schedulers
 from mika.core.config import get_settings
@@ -35,6 +36,7 @@ class BotApp(commands.Bot):
         intents.message_content = True
         super().__init__(command_prefix="\u200b", intents=intents, help_command=None)
         self.llm = LLMClient()
+        self.social_policy = SocialActionPolicy()
         self._web_task: asyncio.Task[None] | None = None
 
     async def setup_hook(self) -> None:

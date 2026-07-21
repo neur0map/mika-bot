@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import discord
 
+from mika.ai.llm.social_policy import SocialContext
+from mika.ai.llm.turn import MediaChoice
 from mika.bot.media import search_klipy
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
@@ -168,13 +171,29 @@ def setup(bot: BotApp) -> None:
         except Exception as error:
             logger.exception("reply failed: %s", error)
             return
+        context = SocialContext(
+            channel_id=str(message.channel.id),
+            mentioned=mentioned,
+            direct_question=mentioned or text.rstrip().endswith("?"),
+            inbound_media_count=len(inbound_media),
+        )
+        policy_decision = bot.social_policy.apply(turn, context)
+        turn = policy_decision.turn
+        applied_reactions: list[str] = []
         for emoji in turn.reactions:
             try:
                 await message.add_reaction(emoji)
+                applied_reactions.append(emoji)
             except discord.HTTPException:
                 logger.debug("reaction failed", exc_info=True)
         sent = await message.reply(turn.reply[:_MAX_REPLY]) if turn.reply.strip() else None
         media_url = await _send_media(message, turn.media.kind, turn.media.query)
+        visible_turn = replace(
+            turn,
+            reactions=tuple(applied_reactions),
+            media=turn.media if media_url else MediaChoice(),
+        )
+        bot.social_policy.record_visible_actions(visible_turn, context)
         action_id = str(sent.id) if sent else f"action-{message.id}"
         now = _iso()
         await _archive_visible_turn(
@@ -215,6 +234,7 @@ def setup(bot: BotApp) -> None:
                     "inboundMediaCount": len(inbound_media),
                     "mediaContext": media_context[:600] or None,
                     "mediaSent": bool(media_url),
+                    "policySuppression": policy_decision.suppression_reason,
                 },
             },
         )
@@ -241,6 +261,7 @@ def setup(bot: BotApp) -> None:
                     "actionOnly": not bool(turn.reply.strip()),
                     "inboundMediaCount": len(inbound_media),
                     "mediaContext": media_context[:600] or None,
+                    "policySuppression": policy_decision.suppression_reason,
                 },
             }
         )
