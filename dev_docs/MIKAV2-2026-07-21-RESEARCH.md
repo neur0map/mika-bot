@@ -80,3 +80,14 @@ The current repository exposes 348 registered slash commands. The final conversa
 Critical migration fact: removing registration does not guarantee that Discord deletes already-registered global/guild commands. A one-time authenticated empty-command-tree/bulk-overwrite cleanup must be staged and verified in Discord before the commandless release is declared complete.
 
 See `docs/plans/2026-07-21-mika-conversation-only.md` for the execution order and exact paths.
+
+## Controlled provider smoke benchmark — 2026-07-21
+
+The stopped VPS image was tested without Discord connectivity using six synthetic Mika-shaped prompts: casual mishap, explicit GIF request, banter, comfort, simple question, and inbound-media context. Each provider was asked through the same strict `mika_turn.v2` pipeline. The output below contains aggregate behavior only; no user/archive message content was used.
+
+| Route | Attempts | Strict-contract turns | Errors | ≤180-char turns | Reaction turns | Selected media |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `minimax/minimax-m3` | 6 | 4 | 2 | 4 | 4 | 1 |
+| `openai/gpt-5.4-mini` | 6 | 5 | 1 | 5 | 5 | 2 |
+
+The sample is too small to prove a live conversational win, but GPT-5.4 mini improved strict-contract compliance by one turn and reduced errors by one on identical inputs. It is configured as the stopped deployment's primary model. The existing media gate and a future controlled Discord cohort remain required before evaluating discretionary GIF behavior.
