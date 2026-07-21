@@ -8,3 +8,4 @@ services:
     env_file: .env
     volumes:
       - ./var:/app/var # conversation memory + logs persist across restarts
+      - ${MIKA_SHARED_ARCHIVE_HOST_PATH:-./var/shared-archive}:/shared/mika-js-data
