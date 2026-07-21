@@ -20,4 +20,4 @@ def setup(bot: BotApp) -> None:
     @bot.event
     async def on_ready() -> None:
         logger.info("connected as %s", bot.user)
-        await bot.change_presence(activity=discord.Game(name="/help"))
+        await bot.change_presence(activity=discord.Game(name="the conversation"))

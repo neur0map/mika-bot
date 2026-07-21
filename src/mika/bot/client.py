@@ -10,7 +10,6 @@ import uvicorn
 from discord.ext import commands
 
 from mika.ai.llm.client import LLMClient
-from mika.bot.commands import register_all
 from mika.bot.events import register_events
 from mika.bot.scheduler import start_schedulers
 from mika.core.config import get_settings
@@ -43,28 +42,6 @@ class BotApp(commands.Bot):
         await self.llm.startup()
         start_schedulers(self)
         self._start_web()
-        if not get_settings().commands_enabled:
-            logger.info("slash commands disabled; chat-only mode")
-            return
-        register_all(self.tree)
-        guild_ids = get_settings().discord.guild_id_list
-        if not guild_ids:
-            await self.tree.sync()
-            logger.info("commands synced (global)")
-            return
-        for gid in guild_ids:
-            guild = discord.Object(id=int(gid))
-            self.tree.copy_global_to(guild=guild)
-            try:
-                await self.tree.sync(guild=guild)
-                logger.info("commands synced (guild %s)", gid)
-            except discord.HTTPException as error:
-                logger.warning(
-                    "couldn't sync commands to guild %s (%s); is the bot invited "
-                    "there? run 'mika invite'. staying online - commands sync once it joins.",
-                    gid,
-                    error,
-                )
 
     def _start_web(self) -> None:
         """Serve the dashboard in the background so one service runs the bot + panel."""

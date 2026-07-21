@@ -124,7 +124,6 @@ class Settings(BaseSettings):
     log_level: str = "info"
     data_dir: Path = Path("./var")
     database_url: str = "sqlite+aiosqlite:///./var/mika.sqlite3"
-    commands_enabled: bool = True
     shared_archive_path: Path | None = None
     discord: DiscordSettings = Field(default_factory=DiscordSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)

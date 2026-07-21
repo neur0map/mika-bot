@@ -1,20 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
 <section id="overview">
-<div class="h"><span class="n">01</span><h2>Overview</h2><span class="rule"></span></div>
-<p class="lede">Your bot is online and serving <b>{{ commands }} commands</b> across {{ groups|length }} groups. Manage everything from here - model, personas, memory, Discord - no SSH needed. Active persona: <b>{{ persona_active }}</b>.</p>
+<div class="h"><span class="n">01</span><h2>Conversation health</h2><span class="rule"></span></div>
+<p class="lede">Your conversation companion is configured for natural chat, selective reactions, and context-aware media. Active persona: <b>{{ persona_active }}</b>.</p>
 <div class="strip">
-<div class="c"><div class="num">{{ commands }}</div><div class="lab">Total commands</div></div>
-<div class="c"><div class="num">{{ groups|length }}</div><div class="lab">Command groups</div></div>
+<div class="c"><div class="num">CHAT</div><div class="lab">Interaction mode</div></div>
 <div class="c"><div class="num">{{ memory_short }}</div><div class="lab">Memory</div></div>
 <div class="c"><div class="num">{{ model_short }}</div><div class="lab">Chat model</div></div>
+<div class="c"><div class="num">{{ "READY" if gif_search else "OFF" }}</div><div class="lab">Media search</div></div>
 </div>
 <div class="actions"><a class="btn" href="/settings">Edit settings</a><a class="btn ghost" href="/personas">Personas</a></div>
-</section>
-<section>
-<div class="h"><span class="n">02</span><h2>Command groups</h2><span class="rule"></span></div>
-<div class="idx">
-{% for g in groups %}<div class="g"><div class="top"><span class="nm"><b>/</b>{{ g.name }}</span><span class="ct">{{ g.count }}</span></div><div class="ds">{{ g.description }}</div></div>{% endfor %}
-</div>
 </section>
 {% endblock %}
