@@ -1,115 +1,46 @@
 # Mika
 
-A self-hostable, multi-purpose Discord bot: an LLM chat companion **and** a full
-bot framework — slash commands, tickets, moderation, fun/utility — plus a
-**login-gated web control panel** to run everything (model, personas, memory,
-Discord settings) from your browser. One-command install; no SSH after setup.
+A self-hostable Discord conversation companion. It listens only where you allow it,
+answers mentions or selected free-chat channels, and can use concise reactions or media
+when appropriate. The local, login-gated dashboard manages its configuration.
 
-Built in Python, designed to run on a Linux VPS under systemd.
+Built in Python for Linux VPS deployment.
 
 > **License:** proprietary, source-available on purchase — see [`LICENSE`](LICENSE).
-
-![Mika dashboard](docs/screenshots/dashboard.png)
-
-*The dashboard (`mika web`, or served automatically by the bot/service): 340+ commands across 33 groups.*
-
----
 
 ## Quickstart
 
 ```bash
-./install.sh        # one command: installs uv, syncs deps, wires git hooks, runs the wizard
-```
-
-Then:
-
-```bash
-make run            # start the bot
-make web            # open the localhost settings & overview page
-```
-
-No `./install.sh`? The equivalent manual path:
-
-```bash
-make install        # uv sync + pre-commit install
-make setup          # interactive setup wizard (tokens, models, features)
+./install.sh
 make run
 ```
+
+The setup wizard stores deployer-provided Discord and model credentials in `.env`.
+Use `make chat` to test the model without Discord and `make doctor` to check the setup.
+
+## How it responds
+
+- Mention it in any allowed server channel for a response.
+- Configure `DISCORD_RESPONSE_CHANNEL_IDS` for dedicated free-chat channels.
+- Direct questions receive a concise answer; unrelated conversation can remain silent.
+- GIF/sticker/clip search is optional and requires a Klipy key.
 
 ## Documentation
 
 | Guide | What it covers |
 |---|---|
-| [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | Beginner walkthrough — zip to running bot in ~10 min |
-| [docs/DASHBOARD.md](docs/DASHBOARD.md) | The web control panel — settings, personas, login |
-| [docs/DISCORD-SETUP.md](docs/DISCORD-SETUP.md) | Creating the bot, token, intents, invite, server/channel IDs |
-| [docs/COSTS.md](docs/COSTS.md) | What the AI costs and how to keep it cheap |
-| [docs/DEPLOY.md](docs/DEPLOY.md) | Run 24/7 — on the host or in Docker |
-| [docs/EXPOSE.md](docs/EXPOSE.md) | Open the dashboard to the internet safely (Tailscale/Cloudflare) |
-| [docs/HONCHO-MEMORY.md](docs/HONCHO-MEMORY.md) | Optional long-term semantic memory |
-
-## Screenshots
-
-
-**Web control panel** — every setting editable in the browser, secrets masked, login-gated
-
-![settings](docs/screenshots/web-settings.png)
-
-**Personas** — switch instantly, or build any famous/fictional character (CrewSoul)
-
-![personas](docs/screenshots/web-personas.png)
-
-**Sign in** — single owner account (email + password)
-
-![login](docs/screenshots/web-login.png)
-
-**Setup wizard** — `mika setup` (no file editing; masks secrets)
-
-![setup wizard](docs/screenshots/setup.png)
-
-**Health check** — `mika doctor` (verifies token, AI, memory, web search)
-
-![doctor](docs/screenshots/doctor.png)
-
-**AI chat from the terminal** — `mika chat` (test the brain without Discord)
-
-![chat](docs/screenshots/chat.png)
-
-**Command-line interface** — `mika --help`
-
-![help](docs/screenshots/help.png)
-
-## What goes where
-
-The repository is strictly layered — each directory has a single purpose and its
-own `README.md`. The authoritative map is [`ARCHITECTURE.md`](ARCHITECTURE.md);
-the contributor rules are [`AGENTS.md`](AGENTS.md).
-
-| Path | Purpose |
-|---|---|
-| `src/mika/core/` | Foundations: config, logging, errors, paths |
-| `src/mika/persistence/` | Storage: db engine, models, repositories |
-| `src/mika/ai/llm/` | **AI domain** — inference: providers, chat, memory, tools (no Discord) |
-| `src/mika/ai/learning/` | **AI domain** — optional self-learning (Hermes reviewer, feedback, reflection) |
-| `src/mika/bot/` | **Server domain** — bot account: commands, events, components, features |
-| `src/mika/userbot/` | **User domain** — personal selfbot QoL (ToS-grey, not shipped, separate env) |
-| `src/mika/web/` | Webserver backend: settings + overview API |
-| `src/mika/cli/` | CLI + setup wizard (entrypoint: `mika`) |
-| `src/mika/system/` | systemd / process control |
-| `frontend/` | The localhost UI (separate from backend) |
-| `deploy/` | systemd units, docker, reverse-proxy config |
-| `tools/` | Dev-only: custom git hooks, scripts |
-| `tests/` | Mirrors `src/mika/` |
-| `docs/` | Documentation |
-| `mikabot(JS)/` | **Gitignored** — old JS bot + reference repos (study only) |
+| [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | Installation and everyday operation |
+| [docs/DISCORD-SETUP.md](docs/DISCORD-SETUP.md) | Bot credentials, intent, invite, and channel scope |
+| [docs/DASHBOARD.md](docs/DASHBOARD.md) | Local settings and conversation-health dashboard |
+| [docs/COSTS.md](docs/COSTS.md) | Model and optional service costs |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Host and Docker deployment |
+| [docs/COMMAND-CLEANUP.md](docs/COMMAND-CLEANUP.md) | One-time stale Discord command removal |
 
 ## Development
 
 ```bash
-make check          # ruff + mypy + pytest — run before every commit
+make check
 ```
 
-Toolchain: [uv](https://docs.astral.sh/uv/) · [ruff](https://docs.astral.sh/ruff/)
-· [mypy](https://mypy.readthedocs.io/) · [pytest](https://docs.pytest.org/) ·
-[pre-commit](https://pre-commit.com/). All rules in [`AGENTS.md`](AGENTS.md) are
-enforced by git hooks.
+The repository is layered; see [ARCHITECTURE.md](ARCHITECTURE.md) and contributor
+requirements in [AGENTS.md](AGENTS.md).

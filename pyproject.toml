@@ -1,13 +1,13 @@
 [project]
 name = "mika"
 version = "0.2.0"
-description = "Self-hostable multi-purpose Discord bot: LLM chat companion + bot framework."
+description = "Self-hostable Discord conversation companion."
 requires-python = ">=3.12"
 readme = "README.md"
 license = { file = "LICENSE" }
 
 dependencies = [
-    "discord-py>=2.4",        # Discord gateway + REST + slash commands (bot/)
+    "discord-py>=2.4",        # Discord gateway and message events (bot/)
     "openai>=1.40",           # OpenAI-compatible client → OpenRouter/Groq/Together/OpenAI (llm/)
     "httpx>=0.27",            # async HTTP for providers + web calls
     "pydantic>=2.7",          # typed models everywhere
@@ -22,9 +22,7 @@ dependencies = [
     "typer>=0.12",            # cli/ commands + setup wizard
     "rich>=13.7",             # wizard/CLI output
     "ddgs>=6.0",              # keyless DuckDuckGo web search (the AI's internet tool)
-    "pillow>=10.0",           # image overlays + meme generators (bot/commands)
-    "qrcode>=7.4",            # /qrcode generator
-    "pyfiglet>=1.0",          # /ascii text art
+
 ]
 
 [project.optional-dependencies]

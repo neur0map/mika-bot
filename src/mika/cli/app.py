@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from mika.cli.commands import chat as chat_cmd
+from mika.cli.commands import cleanup_commands as cleanup_cmd
 from mika.cli.commands import doctor as doctor_cmd
 from mika.cli.commands import invite as invite_cmd
 from mika.cli.commands import logs as logs_cmd
@@ -20,7 +21,7 @@ from mika.cli.commands.userbot import app as userbot_app
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
-    help="Your all-purpose Discord bot + AI.",
+    help="Your self-hostable Discord conversation companion.",
 )
 app.command("setup")(setup_cmd.setup)
 app.command("invite")(invite_cmd.invite)
@@ -30,6 +31,7 @@ app.command("doctor")(doctor_cmd.doctor)
 app.command("web")(web_cmd.web)
 app.command("logs")(logs_cmd.logs)
 app.command("update")(update_cmd.update)
+app.command("cleanup-commands")(cleanup_cmd.cleanup_commands)
 app.add_typer(service_app, name="service", help="Install/control the systemd service.")
 app.add_typer(honcho_app, name="honcho", help="Run the optional long-term memory service.")
 app.add_typer(userbot_app, name="userbot", help="Info on the personal companion (separate).")

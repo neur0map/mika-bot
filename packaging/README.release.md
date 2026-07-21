@@ -1,4 +1,4 @@
-# Your all-purpose Discord bot + AI
+# Your Discord conversation companion
 
 Welcome! This is your bot. Setup takes about 10 minutes and needs **no coding**.
 
@@ -15,7 +15,7 @@ Welcome! This is your bot. Setup takes about 10 minutes and needs **no coding**.
    and an email + password for your **web dashboard** - and offers to start the bot
    right away.
 3. Open your dashboard at the address it prints (usually `http://127.0.0.1:8080`) and
-   log in. Change the model, build personas, edit every setting - no coding, no SSH.
+   log in. Change the model and edit settings with no coding or SSH.
 
 ![Control panel](docs/screenshots/web-settings.png)
 
@@ -32,11 +32,8 @@ Prefer the terminal? `make chat` tests the AI, `make doctor` checks everything, 
 
 ## Talking to the bot
 
-Mention the bot in any channel it can see, or set a channel where it chats freely.
-It also has slash commands:
-
-`/help` `/ask` `/8ball` `/coinflip` `/dice` `/choose` `/userinfo` `/serverinfo`
-`/avatar` `/cat` `/dog`
+Mention the bot in an allowed channel, or set a dedicated channel where it chats freely.
+It responds concisely and may react or use optional media when socially appropriate.
 
 ## Running it 24/7
 

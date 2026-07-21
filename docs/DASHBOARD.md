@@ -13,7 +13,8 @@ Passwords are hashed (PBKDF2) and stored locally in `.env`; nothing leaves your 
 
 ## What you can do
 
-- **Overview** - command count, active persona, model and memory at a glance.
+- **Overview** - conversation mode, active persona, selected model, memory, and media
+  availability at a glance.
 - **Settings** - edit everything: chat model, AI key, creativity, reply length, web
   search, short- and long-term memory, the Discord token/IDs, and the GIF key. Secrets
   show as "set - leave blank to keep" so they never display. Fields tagged **restart**

@@ -21,7 +21,7 @@ def invite() -> None:
         raise typer.Exit(1)
     url = (
         f"https://discord.com/oauth2/authorize?client_id={client_id}"
-        f"&permissions={_PERMISSIONS}&scope=bot+applications.commands"
+        f"&permissions={_PERMISSIONS}&scope=bot"
     )
     console.print("Open it, pick [bold]Add to Server[/], and Authorize:\n")
     console.print(url)

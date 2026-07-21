@@ -1,8 +1,8 @@
 # What it costs to run
 
 The bot itself is free. The only thing you pay for is the **AI** - and only when the
-bot actually answers an AI message (`/ask`, mentions, persona creation). Everything
-else (slash commands, moderation, GIFs, games, tools) is free and unlimited.
+bot actually answers a message or performs an optional reflection. GIF search is an
+optional external service; Discord itself does not charge for the bot API.
 
 ## How AI billing works
 
@@ -15,10 +15,7 @@ subscription, no monthly minimum - if the bot sits idle, you pay nothing.
 1. **Your main chat model** - answers everyday messages. *You pick this* during `mika
    setup`. This is where almost all spend goes, so the choice is yours: cheap and fast,
    or smart and pricier.
-2. **The persona creator model** - only runs when you use `/persona create` to generate
-   a new character. The bot presets a strong, well-priced model for this so personas
-   come out good without you having to tune it. It runs rarely (once per persona), so
-   its cost is negligible.
+
 
 ## Rough cost estimates
 
@@ -47,6 +44,5 @@ Long conversations and big context windows cost more.
 
 ## What's always free
 
-Slash commands, moderation, anti-spam, tickets, giveaways, welcome messages, GIFs
-(with a free Klipy key), games, text tools, image effects, downloads, and the dashboard
-- none of these call the AI, so none of them cost anything.
+The local dashboard and Discord bot API have no Mika usage charge. A Klipy key may be
+needed for optional GIF, sticker, or clip search; check that provider's current terms.

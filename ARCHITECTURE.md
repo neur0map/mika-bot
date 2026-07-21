@@ -22,8 +22,7 @@ mika/
 │   │   └── learning/         reviewer · feedback · reflection · store  (optional self-learning)
 │   │
 │   ├── bot/                  ══ SERVER DOMAIN (the Discord bot) ══
-│   │   ├── commands/ events/ components/
-│   │   └── features/         tickets/ · moderation/
+│   │   ├── events/ · media/ · scheduler/
 │   │
 │   ├── web/                  app · routes/ · templates/   (the control-panel dashboard)
 │   ├── cli/                  app · commands/              (the `mika` command)
@@ -34,8 +33,8 @@ mika/
 
 ## The domains
 
-- **Server (`bot/`)** - the Discord bot serving everyone in a guild: slash commands,
-  events, components, and `features/` (tickets, moderation).
+- **Server (`bot/`)** - the Discord bot serving configured guilds through message,
+  reaction, and ready events.
 - **AI (`ai/`)** - the intelligence: `llm/` (inference - providers, chat pipeline,
   memory, tools) and `learning/` (the optional, opt-in self-improvement system).
 

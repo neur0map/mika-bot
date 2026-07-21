@@ -9,7 +9,7 @@ You only have to do this **once**, and the whole thing takes about 5 minutes. Wh
 > - **Bot user** — the account inside an application that actually shows up in servers.
 > - **Token** — a long secret string that lets your code log in *as* the bot. Treat it like a password.
 > - **Intent** — a permission you tick on the developer site that lets your bot receive certain kinds of events (like message text).
-> - **Scope** — what your bot is allowed to do when you invite it (e.g. join servers, register slash commands).
+> - **Scope** — what your bot is allowed to do when you invite it (for Mika, join servers).
 > - **Permission** — what your bot is allowed to do *inside* a server once it's there (send messages, embed links, etc.).
 
 ---
@@ -68,16 +68,13 @@ This is the link you'll click to actually put your bot into a server. Discord ha
 
 1. In the left sidebar, click **OAuth2**.
 2. Click **URL Generator** (it might be a sub-item under OAuth2, or visible directly — depends on which version of the portal you see).
-3. Under **Scopes**, tick **both** of these boxes:
-   - **`bot`** — lets your application join servers as a bot user.
-   - **`applications.commands`** — lets your bot register slash commands like `/help` and `/dice`.
-   - Do **not** tick anything else. (Skipping `applications.commands` is the #1 reason slash commands don't appear later.)
+3. Under **Scopes**, tick **`bot`** only — it lets your application join servers as a bot user.
 4. A new section called **Bot Permissions** will appear below the scopes. Tick exactly these:
    - **View Channels** — so the bot can see channels at all.
    - **Send Messages** — so it can reply.
    - **Read Message History** — so it has context when you mention it in the middle of a conversation.
    - **Embed Links** — so its replies can include nice formatted previews.
-   - **Attach Files** — so commands like `/cat` and `/dog` can post pictures.
+
    - **Add Reactions** — so it can react with emoji when appropriate.
    - You can leave everything else unchecked.
 5. Scroll to the very bottom of the page. You'll see a long **Generated URL** with a **Copy** button next to it. Click **Copy**.
@@ -98,7 +95,7 @@ Switch over to Discord — your bot should now appear in the server's member lis
 
 ## Step 7 — Turn on Developer Mode and copy your Server / Channel IDs
 
-The Mika wizard will optionally ask you for your **Server ID** and one or more **Channel IDs**. These are long numbers that let Mika know which server to register slash commands in (so they appear instantly instead of after an hour) and which channels are "free-chat" channels where it replies without being mentioned.
+The Mika wizard will optionally ask you for your **Server ID** and one or more **Channel IDs**. These are long numbers that restrict which servers Mika serves and identify "free-chat" channels where it replies without being mentioned.
 
 To copy these IDs, you first need to turn on **Developer Mode** in your Discord app — it just unlocks a "Copy ID" right-click option.
 
@@ -139,7 +136,7 @@ When the Mika setup wizard asks for these, here's where each one goes in the `.e
 |----------------------------------------|---------------------------------------|-----------|
 | Bot token (Step 2)                     | `DISCORD_TOKEN`                       | Yes       |
 | Application ID (Step 4)                | `DISCORD_CLIENT_ID`                   | Yes       |
-| Server ID (Step 7)                     | `DISCORD_GUILD_IDS`                   | Recommended (faster slash-command updates) |
+| Server ID (Step 7)                     | `DISCORD_GUILD_IDS`                   | Recommended (restricts bot scope) |
 | Channel ID(s) for free-chat (Step 7)   | `DISCORD_RESPONSE_CHANNEL_IDS`        | Optional  |
 | The name you want the bot called       | `MIKA_PERSONA_NAME`                   | Yes       |
 | Your OpenRouter (or other LLM) key     | `MIKA_LLM_API_KEY`                    | Yes       |
