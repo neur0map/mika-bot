@@ -7,6 +7,7 @@ from typing import Any
 from mika.ai.llm.chat.pipeline import run_turn
 from mika.ai.llm.providers.base import ChatResult, Message, ToolCall
 from mika.ai.llm.tools.registry import Tool, ToolRegistry
+from mika.ai.llm.turn import mika_turn_response_format
 
 
 class FakeProvider:
@@ -22,7 +23,7 @@ class FakeProvider:
         tools: list[Message] | None = None,
         temperature: float = 0.8,
         max_tokens: int = 600,
-        response_format: str | None = None,
+        response_format: str | dict[str, Any] | None = None,
     ) -> ChatResult:
         self.calls.append(messages)
         self.response_formats = [*getattr(self, "response_formats", []), response_format]
@@ -87,4 +88,4 @@ async def test_json_mode_is_requested_without_tools() -> None:
         require_json=True,
     )
     assert out == '{"reply":"ok"}'
-    assert provider.response_formats == ["json_object"]
+    assert provider.response_formats == [mika_turn_response_format()]

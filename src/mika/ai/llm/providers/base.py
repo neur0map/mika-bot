@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 Message = dict[str, Any]
+ResponseFormat = str | dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +41,7 @@ class ChatProvider(Protocol):
         tools: list[Message] | None = None,
         temperature: float = 0.8,
         max_tokens: int = 600,
-        response_format: str | None = None,
+        response_format: ResponseFormat | None = None,
     ) -> ChatResult:
         """Return the model's reply (text and/or tool calls) for the messages."""
         ...

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mika.ai.llm.providers.base import ChatProvider, Message
 from mika.ai.llm.tools.registry import ToolRegistry
+from mika.ai.llm.turn import mika_turn_response_format
 
 _MAX_TOOL_ITERATIONS = 4
 
@@ -36,7 +37,9 @@ async def run_turn(
             tools=schemas,
             temperature=temperature,
             max_tokens=max_tokens,
-            response_format="json_object" if (require_json and schemas is None) else None,
+            response_format=mika_turn_response_format()
+            if (require_json and schemas is None)
+            else None,
         )
         if not result.tool_calls:
             return (result.content or "").strip()
@@ -64,6 +67,6 @@ async def run_turn(
         tools=None,
         temperature=temperature,
         max_tokens=max_tokens,
-        response_format="json_object" if require_json else None,
+        response_format=mika_turn_response_format() if require_json else None,
     )
     return (final.content or "").strip()

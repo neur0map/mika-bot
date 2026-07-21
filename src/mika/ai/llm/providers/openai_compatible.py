@@ -7,7 +7,7 @@ from typing import Any, cast
 from openai import NOT_GIVEN, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageFunctionToolCall
 
-from mika.ai.llm.providers.base import ChatResult, Message, ToolCall
+from mika.ai.llm.providers.base import ChatResult, Message, ResponseFormat, ToolCall
 
 
 class OpenAICompatibleProvider:
@@ -24,10 +24,14 @@ class OpenAICompatibleProvider:
         tools: list[Message] | None = None,
         temperature: float = 0.8,
         max_tokens: int = 600,
-        response_format: str | None = None,
+        response_format: ResponseFormat | None = None,
     ) -> ChatResult:
         tools_param: Any = tools if tools else NOT_GIVEN
-        response_format_param: Any = {"type": response_format} if response_format else NOT_GIVEN
+        response_format_param: Any = (
+            {"type": response_format}
+            if isinstance(response_format, str)
+            else response_format or NOT_GIVEN
+        )
         response = await self._client.chat.completions.create(
             model=model,
             messages=cast("Any", messages),
