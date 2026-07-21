@@ -9,3 +9,11 @@ services:
     volumes:
       - ./var:/app/var # conversation memory + logs persist across restarts
       - ${MIKA_SHARED_ARCHIVE_HOST_PATH:-./var/shared-archive}:/shared/mika-js-data
+    networks:
+      - default
+      - honcho
+
+networks:
+  honcho:
+    external: true
+    name: ${MIKA_HONCHO_NETWORK:-honcho_default}
