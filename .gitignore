@@ -73,4 +73,5 @@ coverage.xml
 .prowl/editor/
 .prowl/setup-applies.json
 .prowl-setup.lock
+.worktrees/
 # /prowl-agent: derived state
