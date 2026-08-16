@@ -10,11 +10,17 @@ import uvicorn
 from discord.ext import commands
 
 from mika.ai.llm.client import LLMClient
+from mika.ai.llm.memory.store import LocalMemory
 from mika.bot.events import register_events
 from mika.bot.scheduler import start_schedulers
 from mika.conversation.actions import ActionPlanner
+from mika.conversation.context import ContextSelector, TurnObserver
+from mika.conversation.engine import ConversationEngine
+from mika.conversation.participation import ParticipationPlanner
+from mika.conversation.tools import ToolPlanner
 from mika.core.config import get_settings
 from mika.core.logging import configure_logging, get_logger
+from mika.persistence.conversations.managed_traces import ManagedTurnTraceRepository
 from mika.persistence.engine import init_db
 from mika.web.app import create_app
 
@@ -35,8 +41,22 @@ class BotApp(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix="\u200b", intents=intents, help_command=None)
-        self.llm = LLMClient()
-        self.action_planner = ActionPlanner()
+        settings = get_settings()
+        memory = LocalMemory()
+        self.llm = LLMClient(memory)
+        actions = ActionPlanner()
+        self.conversation = ConversationEngine(
+            ContextSelector(memory),
+            ParticipationPlanner(),
+            ToolPlanner(),
+            self.llm,
+            actions,
+            TurnObserver(
+                memory,
+                assistant_name=settings.persona.name,
+            ),
+            ManagedTurnTraceRepository(),
+        )
         self._web_task: asyncio.Task[None] | None = None
 
     async def setup_hook(self) -> None:

@@ -15,6 +15,8 @@ from mika.ai.llm.providers.factory import build_fallback_provider, build_provide
 from mika.ai.llm.tools.registry import ToolRegistry
 from mika.ai.llm.tools.web_search import web_search_tool
 from mika.ai.llm.turn import MediaChoice, MikaTurn
+from mika.conversation.context import SelectedContext
+from mika.conversation.contracts import ConversationEnvelope
 from mika.conversation.generation import (
     GenerationConfig,
     GenerationRequest,
@@ -22,6 +24,8 @@ from mika.conversation.generation import (
     PromptComposer,
     TurnParser,
 )
+from mika.conversation.participation import ParticipationDecision
+from mika.conversation.tools import ToolPlan
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 
@@ -55,17 +59,33 @@ _PROMPT = PromptComposer()
 _TURN_PARSER = TurnParser()
 
 
+def _envelope_media_context(envelope: ConversationEnvelope) -> str:
+    """Describe normalized media structurally while providers receive its URLs."""
+    if not envelope.visual_inputs:
+        return ""
+    lines = [
+        f"- {asset.kind}, {asset.source}"
+        + (f", {asset.content_type}" if asset.content_type else "")
+        + (f": {asset.filename[:120]}" if asset.filename else "")
+        for asset in envelope.visual_inputs[:4]
+    ]
+    return (
+        "[incoming media context: look at the attached media and treat it as a social cue; "
+        "do not narrate it unless asked.]\n" + "\n".join(lines)
+    )
+
+
 class LLMClient:
     """Orchestrates memory, persona, and the provider to answer a message."""
 
-    def __init__(self) -> None:
+    def __init__(self, memory: LocalMemory | None = None) -> None:
         settings = get_settings()
         self._settings = settings
         self._provider: ChatProvider = build_provider(settings.llm, data_dir=settings.data_dir)
         self._fallback: ChatProvider | None = build_fallback_provider(
             settings.llm, data_dir=settings.data_dir
         )
-        self._local = LocalMemory()
+        self._local = memory or LocalMemory()
         self._honcho = HonchoMemory() if settings.memory.honcho_enabled else None
         self._tools = ToolRegistry()
         if settings.tools.web_search_enabled:
@@ -139,6 +159,43 @@ class LLMClient:
         )
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
+
+    async def generate(
+        self,
+        envelope: ConversationEnvelope,
+        context: SelectedContext,
+        participation: ParticipationDecision,
+        tools: ToolPlan,
+    ) -> MikaTurn:
+        """Generate from already-selected engine context without persisting twice."""
+        history: list[Message] = [
+            {
+                "role": "user" if item.role == "user" else "assistant",
+                "content": f"{item.author_name}: {item.content}"
+                if item.role == "user"
+                else item.content,
+            }
+            for item in context.history
+        ]
+        media_context = _envelope_media_context(envelope)
+        user_input = self._compose_user_input(envelope.text, media_context)
+        generation_input = self._compose_generation_input(user_input, history)
+        recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
+        reflection, _ = await last_reflection()
+        memory_context = "\n\n".join(value for value in (context.memory, recall) if value.strip())
+        system = build_system_prompt(self._memory_context(memory_context, reflection))
+        turn = await self._generation.generate(
+            GenerationRequest(
+                system=system,
+                history=tuple(history),
+                user_text=f"{envelope.author_name}: {generation_input}",
+                images=tuple(asset.url for asset in envelope.visual_inputs),
+                search_query=envelope.text,
+                tool_names=tools.names,
+                decision_text=user_input,
+            )
+        )
+        return self._gate_media_choice(self._force_requested_media(turn, user_input), user_input)
 
     def _compose_user_input(self, text: str, media_context: str = "") -> str:
         return _PROMPT.user_input(text, media_context)

@@ -4,22 +4,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
 
 import discord
 
 from mika.bot.media import search_klipy
-from mika.conversation.actions import ActionContext
 from mika.conversation.contracts.media import MediaAsset
-from mika.conversation.trace_service import TurnTraceService
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 from mika.discord.execution.archive import build_visible_records
 from mika.discord.execution.executor import DiscordActionExecutor
 from mika.discord.ingress.envelope import envelope_from_message
 from mika.discord.ingress.media import media_from_message
-from mika.persistence.conversations.traces import TurnTraceRepository
-from mika.persistence.engine import session
 from mika.persistence.shared_archive import archive_event, archive_message
 
 if TYPE_CHECKING:
@@ -126,15 +121,6 @@ def _message_record(message: discord.Message, role: str, content: str) -> dict[s
     }
 
 
-async def _persist_turn_trace(trace: TurnTraceService) -> None:
-    """Persist diagnostics without affecting visible Discord behavior."""
-    try:
-        async with session() as database:
-            await trace.persist(TurnTraceRepository(database))
-    except Exception:
-        logger.warning("turn trace persistence failed", exc_info=True)
-
-
 def setup(bot: BotApp) -> None:
     """Register the on_message handler."""
     free_channels = set(get_settings().discord.response_channel_id_list)
@@ -157,48 +143,21 @@ def setup(bot: BotApp) -> None:
         free_chat = str(message.channel.id) in free_channels
         if not mentioned and not free_chat:
             return
-        trace = TurnTraceService(str(uuid4()), str(message.id), str(message.channel.id))
-        trace.record(
-            "ingress",
-            "ready",
-            details={"media_count": len(inbound_media), "mentioned": mentioned},
-        )
         text = message.clean_content.replace(f"@{bot.user.display_name}", "").strip()
         media_context = _media_context(inbound_media)
         if not text and not media_context:
             return
         try:
             async with message.channel.typing():
-                turn = await bot.llm.reply(
-                    channel_id=str(message.channel.id),
-                    author_id=str(message.author.id),
-                    author_name=message.author.display_name,
-                    text=text,
-                    media_context=media_context,
-                    media_urls=_media_urls(inbound_media),
-                    trace=trace,
-                )
+                plan = await bot.conversation.handle(envelope)
         except Exception as error:
             logger.exception("reply failed: %s", error)
-            await _persist_turn_trace(trace)
             return
-        context = ActionContext(
-            channel_id=str(message.channel.id),
-            mentioned=mentioned,
-            direct_question=mentioned or text.rstrip().endswith("?"),
-        )
-        plan = bot.action_planner.plan(turn, context)
-        trace.record(
-            "policy",
-            "silent" if plan.is_silent else "allowed",
-            reason=plan.silence_reason,
-        )
         execution = await executor.execute(message, plan)
-        bot.action_planner.record_visible(
-            plan,
-            execution,
-            channel_id=context.channel_id,
-        )
+        try:
+            await bot.conversation.observe(envelope, plan, execution)
+        except Exception:
+            logger.warning("turn observation failed", exc_info=True)
         now = _iso()
         message_record, event_record = build_visible_records(
             message,
@@ -213,14 +172,3 @@ def setup(bot: BotApp) -> None:
         if message_record is not None:
             await archive_message(message_record)
         await archive_event(event_record)
-        trace.record(
-            "execution",
-            "visible" if message_record is not None else "silent",
-            details={
-                "reply_sent": execution.reply_message_id is not None,
-                "reaction_count": len(execution.applied_reactions),
-                "media_sent": execution.media_url is not None,
-                "failure_count": len(execution.failures),
-            },
-        )
-        await _persist_turn_trace(trace)

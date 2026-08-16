@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from mika.conversation.actions import ActionPlan, MediaRequest
 from mika.conversation.contracts import ConversationEnvelope
 from mika.conversation.evaluation import (
     BenchmarkCase,
@@ -14,6 +15,7 @@ from mika.conversation.evaluation import (
     load_cases,
     run_cases,
 )
+from mika.conversation.evaluation.adapter import GenerationEvidence, visible_from_action
 
 
 async def test_runner_never_passes_hidden_expectations_to_responder() -> None:
@@ -83,3 +85,20 @@ def test_fixture_contains_balanced_blind_cases() -> None:
     assert len({case.category for case in cases}) >= 15
     assert all(case.turns for case in cases)
     assert all("benchmark" not in turn.text.lower() for case in cases for turn in case.turns)
+
+
+def test_benchmark_adapter_uses_recorded_stage_evidence() -> None:
+    plan = ActionPlan(
+        reply="here",
+        reactions=("👀",),
+        media=MediaRequest("gif", "rain"),
+    )
+
+    visible = visible_from_action(
+        plan,
+        GenerationEvidence(("web_search",), media_context_used=True),
+    )
+
+    assert visible.actions == ("reaction", "gif")
+    assert visible.used_tools == ("web_search",)
+    assert visible.used_media_context is True
