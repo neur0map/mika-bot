@@ -11,6 +11,7 @@ from mika.ai.llm.client import LLMClient
 from mika.ai.llm.providers.codex_acp import (
     CodexACPProvider,
     _attach_notice,
+    _decode_data_url,
     _render_prompt,
     _ReplyCollector,
     _split_content,
@@ -197,6 +198,11 @@ def test_user_content_becomes_parts_with_images() -> None:
         {"type": "text", "text": "look at this"},
         {"type": "image_url", "image_url": {"url": "https://x/a.gif"}},
     ]
+
+
+def test_sampled_frame_data_url_decodes_for_acp() -> None:
+    assert _decode_data_url("data:image/jpeg;base64,aGVsbG8=") == (b"hello", "image/jpeg")
+    assert _decode_data_url("https://cdn.test/frame.jpg") is None
 
 
 def test_split_content_reads_plain_string() -> None:

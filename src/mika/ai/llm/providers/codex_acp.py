@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import json
 import os
 from contextlib import AsyncExitStack
@@ -403,13 +404,17 @@ async def _image_blocks(urls: list[str]) -> list[Any]:
     ) as http:
         for url in urls[:_MAX_IMAGES]:
             try:
-                response = await http.get(url)
-                response.raise_for_status()
-                data = response.content
+                decoded = _decode_data_url(url)
+                if decoded is None:
+                    response = await http.get(url)
+                    response.raise_for_status()
+                    data = response.content
+                    mime = (response.headers.get("content-type") or "").split(";")[0].strip()
+                else:
+                    data, mime = decoded
                 if len(data) > _MAX_IMAGE_BYTES:
                     logger.warning("skipping %s: %d bytes over limit", url[:80], len(data))
                     continue
-                mime = (response.headers.get("content-type") or "").split(";")[0].strip()
                 if not mime.startswith("image/"):
                     logger.warning("skipping %s: content-type %r", url[:80], mime)
                     continue
@@ -417,3 +422,17 @@ async def _image_blocks(urls: list[str]) -> list[Any]:
             except Exception as error:
                 logger.warning("image fetch failed for %s: %s", url[:80], error)
     return blocks
+
+
+def _decode_data_url(url: str) -> tuple[bytes, str] | None:
+    """Decode one base64 image data URL used by sampled animated frames."""
+    if not url.startswith("data:image/"):
+        return None
+    header, separator, encoded = url.partition(",")
+    if not separator or not header.endswith(";base64"):
+        return None
+    mime = header.removeprefix("data:").removesuffix(";base64")
+    try:
+        return base64.b64decode(encoded, validate=True), mime
+    except (binascii.Error, ValueError):
+        return None

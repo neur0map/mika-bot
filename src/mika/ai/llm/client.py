@@ -24,6 +24,7 @@ from mika.conversation.generation import (
     PromptComposer,
     TurnParser,
 )
+from mika.conversation.media import TemporalMediaSampler, media_context
 from mika.conversation.participation import ParticipationDecision
 from mika.conversation.tools import ToolPlan
 from mika.core.config import get_settings
@@ -59,22 +60,6 @@ _PROMPT = PromptComposer()
 _TURN_PARSER = TurnParser()
 
 
-def _envelope_media_context(envelope: ConversationEnvelope) -> str:
-    """Describe normalized media structurally while providers receive its URLs."""
-    if not envelope.visual_inputs:
-        return ""
-    lines = [
-        f"- {asset.kind}, {asset.source}"
-        + (f", {asset.content_type}" if asset.content_type else "")
-        + (f": {asset.filename[:120]}" if asset.filename else "")
-        for asset in envelope.visual_inputs[:4]
-    ]
-    return (
-        "[incoming media context: look at the attached media and treat it as a social cue; "
-        "do not narrate it unless asked.]\n" + "\n".join(lines)
-    )
-
-
 class LLMClient:
     """Orchestrates memory, persona, and the provider to answer a message."""
 
@@ -88,6 +73,7 @@ class LLMClient:
         self._local = memory or LocalMemory()
         self._honcho = HonchoMemory() if settings.memory.honcho_enabled else None
         self._tools = ToolRegistry()
+        self._media = TemporalMediaSampler()
         if settings.tools.web_search_enabled:
             self._tools.register(web_search_tool())
         self._generation = GenerationService(
@@ -177,8 +163,7 @@ class LLMClient:
             }
             for item in context.history
         ]
-        media_context = _envelope_media_context(envelope)
-        user_input = self._compose_user_input(envelope.text, media_context)
+        user_input = self._compose_user_input(envelope.text, media_context(envelope.visual_inputs))
         generation_input = self._compose_generation_input(user_input, history)
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         reflection, _ = await last_reflection()
@@ -189,7 +174,7 @@ class LLMClient:
                 system=system,
                 history=tuple(history),
                 user_text=f"{envelope.author_name}: {generation_input}",
-                images=tuple(asset.url for asset in envelope.visual_inputs),
+                images=await self._media.prepare(envelope.visual_inputs),
                 search_query=envelope.text,
                 tool_names=tools.names,
                 decision_text=user_input,
