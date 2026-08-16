@@ -244,19 +244,52 @@ Initial acceptance gates:
 - visible action failure below 2%;
 - median normal-turn latency reported and no more than 25% worse without a documented quality win.
 
+## Hermes Agent comparison
+
+The reference checkout is NousResearch/hermes-agent at commit `f06c415`. Prowl navigation
+focused on its runtime implementation and regression tests rather than copying its product
+surface. Four patterns strengthen Mika's design:
+
+- A context engine selects evidence before a provider request and observes the finalized turn
+  afterward. Mika adopts this as `ContextSelector.select()` and `TurnObserver.observe()` so
+  retrieval and learning stay outside generation.
+- Tool definitions are capability- and provider-aware, while execution has explicit pre/post
+  boundaries. Mika keeps a small typed registry, exposes only task-relevant tools, and traces
+  eligibility, provider calls, and execution separately.
+- Multimodal results have a native fast path and a remembered fallback when a provider/model
+  rejects structured image content. Mika records capability failures by provider/model and
+  falls back to a textual perception summary without repeatedly retrying a known-bad shape.
+- Observability nests one turn around provider generations and tool actions. Mika's local trace
+  mirrors that hierarchy and keeps redaction at the storage boundary; external telemetry stays
+  optional.
+
+Hermes also validates several test targets for Mika: persist a coherent final response after a
+tool tail, compact before a long tool turn exhausts context, preserve incremental tool state,
+and test provider-specific multimodal recovery. These become deterministic regression cases in
+the conversation suite.
+
+Mika intentionally does not import Hermes's universal conversation loop, multi-platform gateway,
+large plugin manager, multi-provider setup flows, autonomous delegation, computer-use tools, or
+filesystem-oriented memory documents. Those solve a general-purpose agent product. Mika instead
+keeps Discord ingress explicit, the subscription-backed ACP provider primary, SQLite conversation
+history canonical, and each social decision visible as a small stage. GIF perception remains a
+Mika-specific temporal sampling concern; Hermes's still-image routing does not solve it.
+
 ## Migration sequence
 
 1. Add contracts, trace storage, and blind baseline runner around existing behavior.
 2. Extract Discord ingress/context/execution with compatibility imports.
 3. Extract provider, tool, parser, and generation adapters.
-4. Add participation planning and task-scoped tool exposure.
+4. Add pre-turn context selection, post-turn observation, participation planning, and
+   provider-aware task-scoped tool exposure.
 5. Add referenced-media perception and durable media semantics.
 6. Add hybrid retrieval, user facts, and history backfill.
 7. Move optional command abilities into one-folder units or remove those outside the agreed
    conversation-member product boundary.
 8. Add dashboard diagnostics and benchmark views.
-9. Remove compatibility paths after callers and tests migrate.
-10. Run blind baseline/candidate comparisons, iterate on measured failures, and deploy behind
+9. Add learned multimodal capability fallback and final-response/tool-tail recovery tests.
+10. Remove compatibility paths after callers and tests migrate.
+11. Run blind baseline/candidate comparisons, iterate on measured failures, and deploy behind
     reversible feature flags.
 
 ## Error handling and rollback
