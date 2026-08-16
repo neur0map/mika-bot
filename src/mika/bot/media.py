@@ -13,6 +13,12 @@ from mika.core.config import get_settings
 _MEDIA_SUFFIXES = (".gif", ".gifv", ".mp4", ".webp", ".webm")
 _MAX_QUERY_WORDS = 6
 _MAX_QUERY_CHARS = 70
+_MEDIA_ENDPOINTS = {"gif": "gifs", "sticker": "stickers", "clip": "clips"}
+
+
+def media_endpoint_kind(kind: str) -> str:
+    """Map platform-neutral singular media kinds to Klipy endpoints."""
+    return _MEDIA_ENDPOINTS.get(kind, kind if kind in _MEDIA_ENDPOINTS.values() else "gifs")
 
 
 def normalize_media_query(query: str) -> str:
@@ -47,7 +53,7 @@ async def search_klipy(kind: str, query: str) -> str | None:
     normalized_query = normalize_media_query(query)
     if not key or not normalized_query:
         return None
-    normalized = kind if kind in {"gifs", "stickers", "clips"} else "gifs"
+    normalized = media_endpoint_kind(kind)
     url = f"https://api.klipy.com/api/v1/{key}/{normalized}/search"
     async with httpx.AsyncClient(timeout=6.0) as client:
         response = await client.get(url, params={"q": normalized_query, "per_page": 24})

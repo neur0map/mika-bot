@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import discord
 
-from mika.ai.llm.social_policy import SocialContext
-from mika.ai.llm.turn import MediaChoice
 from mika.bot.media import search_klipy
+from mika.conversation.actions import ActionContext
 from mika.conversation.contracts.media import MediaAsset
 from mika.conversation.trace_service import TurnTraceService
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
+from mika.discord.execution.archive import build_visible_records
+from mika.discord.execution.executor import DiscordActionExecutor
 from mika.discord.ingress.envelope import envelope_from_message
 from mika.discord.ingress.media import media_from_message
 from mika.persistence.conversations.traces import TurnTraceRepository
@@ -26,8 +26,6 @@ if TYPE_CHECKING:
     from mika.bot.client import BotApp
 
 logger = get_logger(__name__)
-_MAX_REPLY = 1990
-_MEDIA_KIND = {"gif": "gifs", "sticker": "stickers", "clip": "clips"}
 
 
 def _iso(ts: float | None = None) -> str:
@@ -128,30 +126,6 @@ def _message_record(message: discord.Message, role: str, content: str) -> dict[s
     }
 
 
-async def _send_media(message: discord.Message, media_type: str, query: str | None) -> str | None:
-    if media_type not in _MEDIA_KIND or not query:
-        return None
-    try:
-        url = await search_klipy(_MEDIA_KIND[media_type], query)
-    except Exception as error:
-        logger.warning("chat media search failed: %s", error)
-        return None
-    if not url:
-        return None
-    try:
-        await message.channel.send(url)
-    except discord.HTTPException as error:
-        logger.warning("chat media send failed: %s", error)
-        return None
-    return url
-
-
-async def _archive_visible_turn(is_silent: bool, record: dict[str, Any]) -> None:
-    """Store only actions that were visible to Discord users."""
-    if not is_silent:
-        await archive_message(record)
-
-
 async def _persist_turn_trace(trace: TurnTraceService) -> None:
     """Persist diagnostics without affecting visible Discord behavior."""
     try:
@@ -165,6 +139,7 @@ def setup(bot: BotApp) -> None:
     """Register the on_message handler."""
     free_channels = set(get_settings().discord.response_channel_id_list)
     allowed_guilds = set(get_settings().discord.guild_id_list)
+    executor = DiscordActionExecutor(search_klipy)
 
     @bot.event
     async def on_message(message: discord.Message) -> None:
@@ -207,112 +182,45 @@ def setup(bot: BotApp) -> None:
             logger.exception("reply failed: %s", error)
             await _persist_turn_trace(trace)
             return
-        context = SocialContext(
+        context = ActionContext(
             channel_id=str(message.channel.id),
             mentioned=mentioned,
             direct_question=mentioned or text.rstrip().endswith("?"),
-            inbound_media_count=len(inbound_media),
         )
-        policy_decision = bot.social_policy.apply(turn, context)
-        turn = policy_decision.turn
+        plan = bot.action_planner.plan(turn, context)
         trace.record(
             "policy",
-            "suppressed" if policy_decision.suppression_reason else "allowed",
-            reason=policy_decision.suppression_reason,
+            "silent" if plan.is_silent else "allowed",
+            reason=plan.silence_reason,
         )
-        applied_reactions: list[str] = []
-        for emoji in turn.reactions:
-            try:
-                await message.add_reaction(emoji)
-                applied_reactions.append(emoji)
-            except discord.HTTPException:
-                logger.debug("reaction failed", exc_info=True)
-        sent = await message.reply(turn.reply[:_MAX_REPLY]) if turn.reply.strip() else None
-        media_url = await _send_media(message, turn.media.kind, turn.media.query)
-        visible_turn = replace(
-            turn,
-            reactions=tuple(applied_reactions),
-            media=turn.media if media_url else MediaChoice(),
+        execution = await executor.execute(message, plan)
+        bot.action_planner.record_visible(
+            plan,
+            execution,
+            channel_id=context.channel_id,
         )
-        bot.social_policy.record_visible_actions(visible_turn, context)
-        action_id = str(sent.id) if sent else f"action-{message.id}"
         now = _iso()
-        await _archive_visible_turn(
-            turn.is_silent,
-            {
-                "id": f"py-{action_id}",
-                "role": "assistant",
-                "author": get_settings().persona.name,
-                "author_id": str(bot.user.id),
-                "content": turn.reply,
-                "created_at": now,
-                "guild_id": str(message.guild.id) if message.guild else None,
-                "guild_name": message.guild.name if message.guild else None,
-                "channel_id": str(message.channel.id),
-                "channel_name": getattr(message.channel, "name", None),
-                "discord_message_id": str(sent.id) if sent else None,
-                "reply_to_discord_message_id": str(message.id),
-                "media": [
-                    {
-                        "kind": turn.media.kind,
-                        "url": media_url,
-                        "name": turn.media.query,
-                        "source": "klipy",
-                    }
-                ]
-                if media_url
-                else [],
-                "reactions": list(turn.reactions),
-                "metadata": {
-                    "captureVersion": 3,
-                    "source": "mikav2-python",
-                    "chosenMedia": {"type": turn.media.kind, "query": turn.media.query},
-                    "turnIntent": turn.intent,
-                    "turnConfidence": turn.confidence,
-                    "turnSchemaVersion": turn.schema_version,
-                    "turnParseStatus": turn.parse_status,
-                    "actionOnly": not bool(turn.reply.strip()),
-                    "inboundMediaCount": len(inbound_media),
-                    "mediaContext": media_context[:600] or None,
-                    "mediaSent": bool(media_url),
-                    "policySuppression": policy_decision.suppression_reason,
-                },
-            },
+        message_record, event_record = build_visible_records(
+            message,
+            plan,
+            execution,
+            bot_user_id=str(bot.user.id),
+            persona_name=get_settings().persona.name,
+            inbound_media_count=len(inbound_media),
+            media_context=media_context,
+            created_at=now,
         )
-        await archive_event(
-            {
-                "event_type": "mikav2_turn_decision",
-                "created_at": now,
-                "guild_id": str(message.guild.id) if message.guild else None,
-                "guild_name": message.guild.name if message.guild else None,
-                "channel_id": str(message.channel.id),
-                "channel_name": getattr(message.channel, "name", None),
-                "discord_message_id": str(sent.id) if sent else None,
-                "related_discord_message_id": str(message.id),
-                "author": get_settings().persona.name,
-                "author_id": str(bot.user.id),
-                "payload": {
-                    "replyLength": len(turn.reply),
-                    "reactions": list(turn.reactions),
-                    "media": {"type": turn.media.kind, "query": turn.media.query, "url": media_url},
-                    "intent": turn.intent,
-                    "confidence": turn.confidence,
-                    "schemaVersion": turn.schema_version,
-                    "parseStatus": turn.parse_status,
-                    "actionOnly": not bool(turn.reply.strip()),
-                    "inboundMediaCount": len(inbound_media),
-                    "mediaContext": media_context[:600] or None,
-                    "policySuppression": policy_decision.suppression_reason,
-                },
-            }
-        )
+        if message_record is not None:
+            await archive_message(message_record)
+        await archive_event(event_record)
         trace.record(
             "execution",
-            "silent" if turn.is_silent else "visible",
+            "visible" if message_record is not None else "silent",
             details={
-                "reply_sent": sent is not None,
-                "reaction_count": len(applied_reactions),
-                "media_sent": media_url is not None,
+                "reply_sent": execution.reply_message_id is not None,
+                "reaction_count": len(execution.applied_reactions),
+                "media_sent": execution.media_url is not None,
+                "failure_count": len(execution.failures),
             },
         )
         await _persist_turn_trace(trace)
