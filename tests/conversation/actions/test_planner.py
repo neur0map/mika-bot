@@ -6,8 +6,13 @@ from mika.ai.llm.turn import MediaChoice, MikaTurn
 from mika.conversation.actions import ActionContext, ActionPlanner, ExecutionResult
 
 
-def context(*, direct: bool = False) -> ActionContext:
-    return ActionContext("c1", mentioned=direct, direct_question=direct)
+def context(*, direct: bool = False, participation_reason: str = "") -> ActionContext:
+    return ActionContext(
+        "c1",
+        mentioned=direct,
+        direct_question=direct,
+        participation_reason=participation_reason,
+    )
 
 
 def test_planner_preserves_reaction_only_candidate() -> None:
@@ -60,3 +65,21 @@ def test_true_silence_carries_reason() -> None:
 
     assert plan.is_silent
     assert plan.silence_reason == "model_silence"
+
+
+def test_strong_proactive_moments_get_media_when_model_omits_it() -> None:
+    celebration = ActionPlanner().plan(
+        MikaTurn("we are so back", intent="hype", confidence=0.9),
+        context(participation_reason="proactive_media_celebration"),
+        now=10.0,
+    )
+    developer_joke = ActionPlanner().plan(
+        MikaTurn("of course it does", intent="joke", confidence=0.9),
+        context(participation_reason="proactive_media_punchline"),
+        now=10.0,
+    )
+
+    assert celebration.media is not None
+    assert celebration.media.query == "celebration hype reaction"
+    assert developer_joke.media is not None
+    assert developer_joke.media.query == "developer joke reaction"

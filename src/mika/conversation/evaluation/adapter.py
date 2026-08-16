@@ -54,9 +54,12 @@ def visible_from_action(action: ActionPlan, evidence: GenerationEvidence) -> Vis
         actions.append("reaction")
     if action.media is not None:
         actions.append(action.media.kind)
+    used_tools = evidence.used_tools
+    if action.media is not None and "media_search" not in used_tools:
+        used_tools = (*used_tools, "media_search")
     return VisibleTurn(
         reply=action.reply,
         actions=tuple(actions),
-        used_tools=evidence.used_tools,
+        used_tools=used_tools,
         used_media_context=evidence.media_context_used,
     )

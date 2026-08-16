@@ -20,6 +20,7 @@ def message(
     *,
     mentioned: bool = False,
     referenced: ReferencedMessage | None = None,
+    media: tuple[MediaAsset, ...] = (),
 ) -> ConversationEnvelope:
     return ConversationEnvelope(
         message_id="m1",
@@ -30,6 +31,7 @@ def message(
         text=text,
         mentioned=mentioned,
         created_at=datetime(2026, 8, 16, tzinfo=UTC),
+        media=media,
         referenced=referenced,
     )
 
@@ -47,6 +49,21 @@ def message(
             "reply",
         ),
         (message("today was honestly rough"), SelectedContext(), "reply"),
+        (message("find the dramatic hamster gif", mentioned=True), SelectedContext(), "media"),
+        (message("love that the deploy broke on friday"), SelectedContext(), "react"),
+        (message("okay smooth talker, that was cute"), SelectedContext(), "reply"),
+        (message("my code is artisanal, every bug handcrafted"), SelectedContext(), "react"),
+        (message("he said it works on his machine"), SelectedContext(), "media"),
+        (message("the build passed first try somehow"), SelectedContext(), "media"),
+        (message("I GOT THE JOB"), SelectedContext(), "react"),
+        (
+            message(
+                "rate the cake",
+                media=(MediaAsset("image", "https://cdn.example/cake.webp"),),
+            ),
+            SelectedContext(),
+            "reply",
+        ),
         (
             message(
                 "this is literally you",
@@ -56,6 +73,20 @@ def message(
                     "ben",
                     "",
                     (MediaAsset("gif", "https://cdn.example/face.gif"),),
+                ),
+            ),
+            SelectedContext(),
+            "react",
+        ),
+        (
+            message(
+                "wait this actually suits you",
+                referenced=ReferencedMessage(
+                    "m0",
+                    "u2",
+                    "ben",
+                    "new haircut",
+                    (MediaAsset("image", "https://cdn.example/hair.png"),),
                 ),
             ),
             SelectedContext(),

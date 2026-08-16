@@ -23,14 +23,34 @@ _COMFORT = re.compile(
 )
 _CALLBACK = re.compile(r"\b(?:remember|again|saga|energy|not the .+ again)\b", re.I)
 _SOCIAL_MEDIA_REPLY = re.compile(
-    r"\b(?:literally (?:you|me)|me when|actual footage|energy|this is (?:us|you|me))\b", re.I
+    r"\b(?:literally (?:you|me)|me when|actual footage|energy|this is (?:us|you|me)|"
+    r"(?:actually )?suits you|looks good on you)\b",
+    re.I,
 )
 _CELEBRATION = re.compile(
-    r"\b(?:I got the|finally (?:shipped|passed|landed|finished)|we are so back|it worked)\b", re.I
+    r"\b(?:I got the|finally (?:shipped|passed|landed|finished)|we are so back|it worked)\b",
+    re.I,
+)
+_PROACTIVE_MEDIA_CELEBRATION = re.compile(
+    r"\b(?:build|tests?|deploy) passed first try\b",
+    re.I,
 )
 _PUNCHLINE = re.compile(
     r"\b(?:with witnesses|works on (?:his|my) machine|handcrafted bug|speedrun|"
-    r"deleted the (?:bug|feature)|meeting about meetings)\b|\b(?:lol|lmao|lmfao|bruh)\b",
+    r"bug handcrafted|deleted the (?:bug|feature)|meeting about meetings)\b|"
+    r"\b(?:lol|lmao|lmfao|bruh)\b",
+    re.I,
+)
+_PROACTIVE_MEDIA_PUNCHLINE = re.compile(
+    r"\b(?:works on (?:his|my) machine|deleted the bug by deleting the feature)\b",
+    re.I,
+)
+_SARCASM = re.compile(
+    r"\b(?:love that .{0,45}(?:broke|failed)|exactly what I wanted|great,? another)\b",
+    re.I,
+)
+_FLIRT = re.compile(
+    r"\b(?:smooth talker|that was cute|make me blush|you always know what to say)\b",
     re.I,
 )
 
@@ -46,13 +66,18 @@ class ParticipationPlanner:
         rules = (
             self._empty,
             self._private_logistics,
-            self._direct,
             self._explicit_media,
+            self._direct,
             self._room_invitation,
             self._comfort,
+            self._current_media,
             self._referenced_media,
             self._callback,
+            self._proactive_media_celebration,
             self._celebration,
+            self._sarcasm,
+            self._flirt,
+            self._proactive_media_punchline,
             self._punchline,
         )
         for rule in rules:
@@ -120,6 +145,14 @@ class ParticipationPlanner:
         return None
 
     @staticmethod
+    def _current_media(
+        envelope: ConversationEnvelope, context: SelectedContext, text: str
+    ) -> ParticipationDecision | None:
+        if envelope.media:
+            return ParticipationDecision("reply", "shared_media", 0.78)
+        return None
+
+    @staticmethod
     def _callback(
         envelope: ConversationEnvelope, context: SelectedContext, text: str
     ) -> ParticipationDecision | None:
@@ -137,9 +170,41 @@ class ParticipationPlanner:
         return None
 
     @staticmethod
+    def _proactive_media_celebration(
+        envelope: ConversationEnvelope, context: SelectedContext, text: str
+    ) -> ParticipationDecision | None:
+        if _PROACTIVE_MEDIA_CELEBRATION.search(text):
+            return ParticipationDecision("media", "proactive_media_celebration", 0.88)
+        return None
+
+    @staticmethod
     def _punchline(
         envelope: ConversationEnvelope, context: SelectedContext, text: str
     ) -> ParticipationDecision | None:
         if _PUNCHLINE.search(text):
             return ParticipationDecision("react", "punchline", 0.8)
+        return None
+
+    @staticmethod
+    def _sarcasm(
+        envelope: ConversationEnvelope, context: SelectedContext, text: str
+    ) -> ParticipationDecision | None:
+        if _SARCASM.search(text):
+            return ParticipationDecision("react", "sarcasm", 0.82)
+        return None
+
+    @staticmethod
+    def _flirt(
+        envelope: ConversationEnvelope, context: SelectedContext, text: str
+    ) -> ParticipationDecision | None:
+        if _FLIRT.search(text):
+            return ParticipationDecision("reply", "playful_flirt", 0.78)
+        return None
+
+    @staticmethod
+    def _proactive_media_punchline(
+        envelope: ConversationEnvelope, context: SelectedContext, text: str
+    ) -> ParticipationDecision | None:
+        if _PROACTIVE_MEDIA_PUNCHLINE.search(text):
+            return ParticipationDecision("media", "proactive_media_punchline", 0.86)
         return None

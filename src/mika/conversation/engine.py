@@ -84,6 +84,7 @@ class ConversationEngine:
             envelope.channel_id,
             envelope.mentioned,
             envelope.mentioned or envelope.text.rstrip().endswith("?"),
+            participation.reason,
         )
         plan = self._actions.plan(turn, action_context)
         trace.record(

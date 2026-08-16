@@ -100,5 +100,14 @@ def test_benchmark_adapter_uses_recorded_stage_evidence() -> None:
     )
 
     assert visible.actions == ("reaction", "gif")
-    assert visible.used_tools == ("web_search",)
+    assert visible.used_tools == ("web_search", "media_search")
     assert visible.used_media_context is True
+
+
+def test_benchmark_adapter_records_planned_media_search_as_tool_use() -> None:
+    visible = visible_from_action(
+        ActionPlan(media=MediaRequest("gif", "celebration")),
+        GenerationEvidence(),
+    )
+
+    assert visible.used_tools == ("media_search",)

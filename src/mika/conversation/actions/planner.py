@@ -15,6 +15,10 @@ from mika.conversation.actions.contracts import (
 _MEDIA_COOLDOWN = 90.0
 _REACTION_COOLDOWN = 20.0
 _DIRECT_FAILURE_REPLY = "i hit a snag—try me again in a sec."
+_PROACTIVE_MEDIA = {
+    "proactive_media_celebration": "celebration hype reaction",
+    "proactive_media_punchline": "developer joke reaction",
+}
 
 
 class ActionPlanner:
@@ -38,6 +42,8 @@ class ActionPlanner:
         ):
             reactions = ()
         media = MediaRequest(turn.media.kind, turn.media.query) if turn.media.query else None
+        if media is None and context.participation_reason in _PROACTIVE_MEDIA:
+            media = MediaRequest("gif", _PROACTIVE_MEDIA[context.participation_reason])
         if media is not None and self._on_cooldown(
             self._last_media, context.channel_id, timestamp, _MEDIA_COOLDOWN
         ):

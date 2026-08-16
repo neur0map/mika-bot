@@ -20,6 +20,7 @@ class ActionContext:
     channel_id: str
     mentioned: bool
     direct_question: bool
+    participation_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
