@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -48,8 +48,14 @@ class ToolRegistry:
     def __bool__(self) -> bool:
         return bool(self._tools)
 
-    def schemas(self) -> list[Message]:
-        return [tool.schema() for tool in self._tools.values()]
+    def schemas(self, names: Iterable[str] | None = None) -> list[Message]:
+        """Return all schemas or only the named tools, preserving registration order."""
+        allowed = set(names) if names is not None else None
+        return [
+            tool.schema()
+            for tool in self._tools.values()
+            if allowed is None or tool.name in allowed
+        ]
 
     async def call(self, name: str, arguments: str) -> str:
         """Run a tool by name with raw JSON arguments; never raises."""
