@@ -207,10 +207,10 @@ token-lean TOON by default; add --format human|toon|json|markdown.
 
 Auto-generated from the Prowl index, refreshed on each `overview`/`init`. Prefer retrieving from Prowl (and reading the cited files) over grepping or relying on training memory; this is the current shape of the repo.
 
-- size: 270 files, 1489 symbols, 846 edges (resolved 297, external deps 549, unresolved 0)
-- languages: python:192 markdown:73 bash:2 yaml:2 toml:1
-- subsystems: src/mika(102,python) · dev-testing(38,python) · tests(13,python) · tools/hooks(6,python) · src/mika(3,python) · src/mika(2,python)
-- entrypoints: .pre-commit-config.yaml · dev-testing/conftest.py · dev-testing/harness.py · dev-testing/test_admin.py · dev-testing/test_animated.py · dev-testing/test_anime.py · dev-testing/test_antispam.py · dev-testing/test_convert.py · (+99 more)
+- size: 273 files, 1583 symbols, 875 edges (resolved 310, external deps 565, unresolved 0)
+- languages: python:195 markdown:73 bash:2 yaml:2 toml:1
+- subsystems: src/mika(104,python) · dev-testing(38,python) · tests(14,python) · tools/hooks(6,python) · src/mika(3,python) · src/mika(2,python)
+- entrypoints: .pre-commit-config.yaml · dev-testing/conftest.py · dev-testing/harness.py · dev-testing/test_admin.py · dev-testing/test_animated.py · dev-testing/test_anime.py · dev-testing/test_antispam.py · dev-testing/test_convert.py · (+100 more)
 - central files (most depended-on): src/mika/core/config.py · src/mika/bot/commands/__init__.py · src/mika/core/logging.py · src/mika/persistence/base.py · src/mika/bot/client.py
 - read these guides first: README.md · AGENTS.md · ARCHITECTURE.md · docs/GETTING-STARTED.md
 
