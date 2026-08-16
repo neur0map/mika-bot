@@ -22,6 +22,19 @@ Passwords are hashed (PBKDF2) and stored locally in `.env`; nothing leaves your 
 - **Personas** - switch personality instantly (memory is kept), or **build a new one**:
   type any famous person or fictional character and the bot generates a persona that
   captures their voice. Switching is live; building takes a few seconds.
+- **Diagnostics** - aggregate outcomes for each staged conversation step plus the latest
+  blind benchmark score and category breakdown. This view never exposes message text,
+  prompts, user facts, Discord IDs, or raw provider output.
+
+To publish a fresh benchmark report to the Diagnostics page:
+
+```bash
+uv run python tools/run_conversation_benchmark.py \
+  --output var/conversation-benchmark.json
+```
+
+The benchmark responder receives ordinary conversation envelopes only; hidden scoring
+expectations are applied after generation.
 
 ## Opening it remotely
 

@@ -14,6 +14,7 @@ from starlette.status import HTTP_303_SEE_OTHER
 from mika.core.config import get_settings
 from mika.web import auth
 from mika.web.routes.auth import router as auth_router
+from mika.web.routes.diagnostics import router as diagnostics_router
 from mika.web.routes.overview import router as overview_router
 from mika.web.routes.personas import router as personas_router
 from mika.web.routes.settings import router as settings_router
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(auth_router)
     app.include_router(overview_router)
+    app.include_router(diagnostics_router)
     app.include_router(settings_router)
     app.include_router(personas_router)
     return app

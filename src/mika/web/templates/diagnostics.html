@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics{% endblock %}
+{% block subtitle %}conversation diagnostics{% endblock %}
+{% block content %}
+<section>
+<div class="h"><span class="n">04</span><h2>Conversation diagnostics</h2><span class="rule"></span></div>
+<p class="lede">Aggregate staged-engine health only. Message text, user facts, Discord identifiers, prompts, and raw model output are never shown here.</p>
+<div class="strip">
+<div class="c"><div class="num">{{ traces.turn_count }}</div><div class="lab">Recent traced turns</div></div>
+<div class="c"><div class="num">{{ benchmark.case_count }}</div><div class="lab">Blind benchmark cases</div></div>
+<div class="c"><div class="num">{{ '%.0f%%'|format(benchmark.score * 100) if benchmark.score is not none else 'NOT RUN' }}</div><div class="lab">Latest benchmark score</div></div>
+<div class="c"><div class="num">{{ benchmark.mode|upper }}</div><div class="lab">Benchmark adapter</div></div>
+</div>
+</section>
+<section>
+<div class="h"><span class="n">A</span><h2>Stage outcomes</h2><span class="rule"></span></div>
+<div class="idx">
+{% for stage, outcomes in traces.stages.items() %}
+<div class="g"><div class="top"><span class="nm">{{ stage }}</span><span class="ct">{{ outcomes.values()|sum }}</span></div>
+<div class="ds">{% for outcome, count in outcomes.items() %}{{ outcome }}={{ count }}{% if not loop.last %} &middot; {% endif %}{% endfor %}</div></div>
+{% else %}
+<div class="g"><div class="nm">No traces yet</div><div class="ds">Conversation traces appear after visible or intentionally silent turns.</div></div>
+{% endfor %}
+</div>
+</section>
+{% if benchmark.categories %}
+<section>
+<div class="h"><span class="n">B</span><h2>Blind benchmark categories</h2><span class="rule"></span></div>
+<div class="idx">
+{% for category, score in benchmark.categories.items() %}
+<div class="g"><div class="top"><span class="nm">{{ category }}</span><span class="ct">{{ '%.0f%%'|format(score * 100) }}</span></div></div>
+{% endfor %}
+</div>
+</section>
+{% endif %}
+{% endblock %}

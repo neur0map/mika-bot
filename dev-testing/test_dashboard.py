@@ -40,7 +40,7 @@ def test_health_is_public() -> None:
 def test_pages_require_login() -> None:
     _fresh_env()
     client = TestClient(create_app())
-    for path in ("/", "/settings", "/personas", "/api/status"):
+    for path in ("/", "/settings", "/personas", "/diagnostics", "/api/status"):
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 303
         assert resp.headers["location"] == "/login"
@@ -53,3 +53,14 @@ def test_dashboard_after_login() -> None:
     assert "Conversation health" in resp.text
     status = client.get("/api/status").json()
     assert status["conversation_only"] is True
+
+
+def test_conversation_diagnostics_after_login() -> None:
+    client = _logged_in_client()
+
+    page = client.get("/diagnostics")
+    payload = client.get("/api/diagnostics/conversation").json()
+
+    assert page.status_code == 200
+    assert "Conversation diagnostics" in page.text
+    assert set(payload) == {"benchmark", "traces"}
