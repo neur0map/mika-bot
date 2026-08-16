@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from mika.ai.learning.reflection import last_reflection
-from mika.ai.llm.chat.pipeline import run_turn
 from mika.ai.llm.chat.prompt import build_system_prompt
 from mika.ai.llm.memory.honcho import HonchoMemory
 from mika.ai.llm.memory.store import LocalMemory
@@ -17,6 +15,13 @@ from mika.ai.llm.providers.factory import build_fallback_provider, build_provide
 from mika.ai.llm.tools.registry import ToolRegistry
 from mika.ai.llm.tools.web_search import web_search_tool
 from mika.ai.llm.turn import MediaChoice, MikaTurn
+from mika.conversation.generation import (
+    GenerationConfig,
+    GenerationRequest,
+    GenerationService,
+    PromptComposer,
+    TurnParser,
+)
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 
@@ -25,38 +30,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-_BUSY_REPLY = "brain snagged. give me a second and try again."
-_ALLOWED_REACTIONS = {"👍", "👎", "😭", "💀", "👀", "🤔", "😂", "😬", "❤️", "🔥", "✅"}
-_MEDIA_TYPES = {"none", "gif", "sticker", "clip"}
-_TURN_SCHEMA_VERSION = "mika_turn.v2"
-_AVOID_PHRASE_LIMIT = 4
-_AVOID_PHRASE_CHARS = 180
-_TURN_INTENTS = {
-    "chat",
-    "joke",
-    "sarcasm",
-    "flirt",
-    "hype",
-    "comfort",
-    "question",
-    "criticism",
-    "media_reaction",
-    "serious",
-    "silence",
-}
 _MEDIA_OK_INTENTS = {"media_reaction", "hype", "joke", "flirt", "sarcasm"}
 _MEDIA_INTENT_CONFIDENCE = 0.6
-_SHORT_REPLY_INTENTS = {
-    "chat",
-    "joke",
-    "sarcasm",
-    "flirt",
-    "hype",
-    "criticism",
-    "media_reaction",
-}
-_SHORT_REPLY_LIMIT = 180
-_LONG_REPLY_LIMIT = 500
 _MEDIA_REQUEST_RE = re.compile(
     r"\b(?:send|post|drop|find|get|use|give|match).*\b(gif|sticker|clip)\b|"
     r"\b(gif|sticker|clip)\s+me\b",
@@ -76,6 +51,8 @@ _SOCIAL_OR_JOKE_RE = re.compile(
     r"\b(?:lol|lmao|lmfao|joke|kidding|jk|meme|bro|bruh|😭|💀|😂)\b",
     re.I,
 )
+_PROMPT = PromptComposer()
+_TURN_PARSER = TurnParser()
 
 
 class LLMClient:
@@ -93,6 +70,17 @@ class LLMClient:
         self._tools = ToolRegistry()
         if settings.tools.web_search_enabled:
             self._tools.register(web_search_tool())
+        self._generation = GenerationService(
+            self._provider,
+            self._fallback,
+            self._tools,
+            GenerationConfig(
+                settings.llm.model,
+                settings.llm.fallback_model,
+                settings.llm.temperature,
+                settings.llm.max_tokens,
+            ),
+        )
 
     async def startup(self) -> None:
         """One-time setup (provision Honcho if enabled)."""
@@ -137,52 +125,26 @@ class LLMClient:
             trace.record("context", "ready", details={"history_count": len(history)})
             trace.record("tools", "eligible" if use_tools else "skipped")
 
-        async def generate() -> str:
-            return await self._generate(
-                system,
-                history,
-                f"{author_name}: {generation_input}",
-                # Routing decisions read `user_input`, never `generation_input`: the
-                # latter appends Mika's own recent wording, so one past joke would
-                # look like the user being jokey and switch tools off for good.
-                use_tools=use_tools,
-                require_json=True,
-                images=media_urls,
+        turn = await self._generation.generate(
+            GenerationRequest(
+                system=system,
+                history=tuple(history),
+                user_text=f"{author_name}: {generation_input}",
+                images=tuple(media_urls or ()),
                 search_query=text,
-            )
-
-        if trace is None:
-            raw = await generate()
-        else:
-            with trace.measure("generation"):
-                raw = await generate()
-        turn = self._parse_turn(raw)
-        turn = await self._retry_if_unstructured(
-            turn, system, history, author_name, generation_input, media_urls
+                tool_names=("web_search",) if use_tools else (),
+                decision_text=user_input,
+            ),
+            trace=trace,
         )
-        turn = self._force_requested_media(turn, user_input)
-        turn = self._gate_media_choice(turn, user_input)
-        turn = replace(turn, reply=self._limit_reply(turn.reply, turn.intent))
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
 
     def _compose_user_input(self, text: str, media_context: str = "") -> str:
-        clean_text = text.strip()
-        clean_media = media_context.strip()
-        if clean_text and clean_media:
-            return f"{clean_text}\n{clean_media}"
-        return clean_text or clean_media or "[media/message with no text]"
+        return _PROMPT.user_input(text, media_context)
 
     def _compose_generation_input(self, user_input: str, history: list[Message]) -> str:
-        avoid = self._recent_assistant_phrases(history)
-        if not avoid:
-            return user_input
-        lines = "\n".join(f"- {phrase}" for phrase in avoid)
-        return (
-            f"{user_input}\n\n"
-            "[recent assistant wording to avoid repeating; keep the same personality "
-            f"but vary rhythm, joke shape, and phrasing.]\n{lines}"
-        )
+        return _PROMPT.generation_input(user_input, history)
 
     def _memory_context(self, recall: str, reflection: str | None) -> str:
         sections: list[str] = []
@@ -191,29 +153,6 @@ class LLMClient:
         if reflection and reflection.strip():
             sections.append("Recent self-reflection lessons:\n" + reflection.strip())
         return "\n\n".join(sections)
-
-    async def _retry_if_unstructured(
-        self,
-        turn: MikaTurn,
-        system: str,
-        history: list[Message],
-        author_name: str,
-        generation_input: str,
-        images: list[str] | None = None,
-    ) -> MikaTurn:
-        if turn.parse_status == "json":
-            return turn
-        retry_input = (
-            f"{author_name}: {generation_input}\n\n"
-            "[previous output failed the mika_turn.v2 JSON contract. Return only one "
-            "valid JSON object with schema_version, reply, reactions, media, intent, "
-            "and confidence.]"
-        )
-        retry_raw = await self._generate(
-            system, history, retry_input, use_tools=False, require_json=True, images=images
-        )
-        retry_turn = self._parse_turn(retry_raw)
-        return retry_turn if retry_turn.parse_status == "json" else turn
 
     def _should_use_tools(self, user_input: str) -> bool:
         if _MEDIA_REQUEST_RE.search(user_input):
@@ -247,28 +186,7 @@ class LLMClient:
         return re.sub(r"\s+", " ", cleaned).strip()[:80]
 
     def _limit_reply(self, reply: str, intent: str) -> str:
-        limit = _SHORT_REPLY_LIMIT if intent in _SHORT_REPLY_INTENTS else _LONG_REPLY_LIMIT
-        if len(reply) <= limit:
-            return reply
-        clipped = reply[: limit - 1].rstrip()
-        boundary = max(clipped.rfind(". "), clipped.rfind("! "), clipped.rfind("? "))
-        if boundary >= limit // 3:
-            return clipped[: boundary + 1].rstrip()
-        word_boundary = clipped.rfind(" ")
-        return (clipped[:word_boundary] if word_boundary > 0 else clipped) + "…"
-
-    def _recent_assistant_phrases(self, history: list[Message]) -> list[str]:
-        phrases: list[str] = []
-        for message in reversed(history):
-            if message.get("role") != "assistant":
-                continue
-            content = str(message.get("content") or "").strip()
-            if not content:
-                continue
-            phrases.append(content[:_AVOID_PHRASE_CHARS])
-            if len(phrases) == _AVOID_PHRASE_LIMIT:
-                break
-        return phrases
+        return _TURN_PARSER.limit_reply(reply, intent)
 
     async def _build_history(self, channel_id: str) -> list[Message]:
         rows = await self._local.recent(channel_id)
@@ -280,180 +198,11 @@ class LLMClient:
                 history.append({"role": "assistant", "content": content})
         return history
 
-    async def _generate(
-        self,
-        system: str,
-        history: list[Message],
-        user_text: str,
-        *,
-        use_tools: bool | None = None,
-        require_json: bool = False,
-        images: list[str] | None = None,
-        search_query: str = "",
-    ) -> str:
-        settings = self._settings
-        structured_user_text = self._structured_instruction(user_text)
-        tools_enabled = bool(self._tools) if use_tools is None else use_tools
-        try:
-            return await run_turn(
-                self._provider,
-                system=system,
-                history=history,
-                user_text=structured_user_text,
-                registry=self._tools,
-                use_tools=tools_enabled,
-                model=settings.llm.model,
-                temperature=settings.llm.temperature,
-                max_tokens=settings.llm.max_tokens,
-                require_json=require_json,
-                images=images,
-                search_query=search_query,
-            )
-        except Exception as primary_error:
-            logger.warning("primary provider failed: %s", primary_error)
-        if self._fallback is None:
-            return _BUSY_REPLY
-        try:
-            return await run_turn(
-                self._fallback,
-                system=system,
-                history=history,
-                user_text=structured_user_text,
-                registry=self._tools,
-                use_tools=False,
-                model=settings.llm.fallback_model,
-                temperature=settings.llm.temperature,
-                max_tokens=settings.llm.max_tokens,
-                require_json=require_json,
-                images=images,
-                search_query=search_query,
-            )
-        except Exception as fallback_error:
-            logger.error("fallback provider failed: %s", fallback_error)
-            return _BUSY_REPLY
-
-    def _structured_instruction(self, user_text: str) -> str:
-        return (
-            f"{user_text}\n\n"
-            "Return strict JSON only with keys: schema_version, reply, reactions, "
-            "media, intent, confidence. schema_version is 'mika_turn.v2'. reply is "
-            "the Discord message text; it may be an empty string only when a reaction "
-            "or media choice is enough. reactions is 0-1 emoji from "
-            "[👍,👎,😭,💀,👀,🤔,😂,😬,❤️,🔥,✅]. media is "
-            "{type:'none'|'gif'|'sticker'|'clip', query:null|string}. intent is one of "
-            "chat, joke, sarcasm, flirt, hype, comfort, question, criticism, "
-            "media_reaction, serious, silence. confidence is a number from 0 to 1 for the social "
-            "read, not factual certainty. For casual banter, use one sharp sentence (usually "
-            "under 180 characters), one reaction, or silence; paragraphs need a real reason. "
-            "Choose silence only when you were not directly addressed and adding anything would be "
-            "clutter. Use reactions/GIFs only when a real Discord user would. For incoming media, "
-            "decide if it is probably a joke, sarcasm, flirting, hype, confusion, or a serious "
-            "share; do not describe or caption the GIF/image unless asked. Prefer a reaction, a "
-            "short social reply, a matching GIF, or silence. No explanations of this JSON."
-        )
-
     def _parse_turn(self, raw: str) -> MikaTurn:
-        text = raw.strip()
-        candidate = self._extract_json_object(text) or text
-        try:
-            data = json.loads(candidate)
-        except json.JSONDecodeError:
-            labeled = self._extract_labeled_reply(text)
-            reply = labeled or self._clean_reply_text(text)
-            status = "labeled" if labeled else "fallback"
-            return MikaTurn(reply=reply or _BUSY_REPLY, parse_status=status, raw=raw)
-        reply = str(data.get("reply") or data.get("message") or "").strip()
-        raw_reactions = self._reaction_list(data.get("reactions"))
-        reactions = tuple(str(item) for item in raw_reactions if str(item) in _ALLOWED_REACTIONS)[
-            :1
-        ]
-        raw_media = data.get("media") if isinstance(data.get("media"), dict) else {}
-        media_type = str(raw_media.get("type") or "none").lower()
-        if media_type not in _MEDIA_TYPES:
-            media_type = "none"
-        query_value = raw_media.get("query")
-        query = str(query_value).strip()[:80] if query_value else None
-        reply = self._clean_reply_text(reply)
-        intent = str(data.get("intent") or "chat").strip().lower()
-        if intent not in _TURN_INTENTS:
-            intent = "chat"
-        silent = intent == "silence" and not reply and not reactions and media_type == "none"
-        if not reply and not reactions and media_type == "none" and not silent:
-            reply = _BUSY_REPLY
-        confidence = self._bounded_confidence(data.get("confidence"))
-        schema_version = str(data.get("schema_version") or _TURN_SCHEMA_VERSION).strip()
-        return MikaTurn(
-            reply=reply[:1900],
-            reactions=reactions,
-            media=MediaChoice(media_type, query),
-            intent=intent,
-            confidence=confidence,
-            schema_version=schema_version or _TURN_SCHEMA_VERSION,
-            raw=raw,
-        )
-
-    def _reaction_list(self, value: Any) -> list[Any]:
-        """Accept a bare emoji where the schema asks for an array.
-
-        Providers that cannot enforce a strict JSON schema (Codex over ACP) often
-        answer `"reactions": "👀"` instead of `["👀"]`. Dropping that on the floor
-        silently loses the reaction, so take the scalar as a one-item list.
-        """
-        if isinstance(value, list):
-            return value
-        if isinstance(value, str) and value.strip():
-            return [value.strip()]
-        return []
-
-    def _bounded_confidence(self, value: Any) -> float:
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return 0.5
-        return max(0.0, min(1.0, number))
+        return _TURN_PARSER.parse(raw)
 
     def _extract_json_object(self, text: str) -> str | None:
-        start = text.find("{")
-        if start < 0:
-            return None
-        depth = 0
-        in_string = False
-        escaped = False
-        for index, char in enumerate(text[start:], start=start):
-            if escaped:
-                escaped = False
-                continue
-            if char == "\\" and in_string:
-                escaped = True
-                continue
-            if char == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start : index + 1]
-        return None
-
-    def _extract_labeled_reply(self, text: str) -> str | None:
-        match = re.search(
-            r"(?:^|\s)reply\s*:\s*(?P<reply>.*?)(?:\s+(?:media|reactions?)\s*:|$)",
-            text,
-            flags=re.I | re.S,
-        )
-        if not match:
-            return None
-        return self._clean_reply_text(match.group("reply"))
-
-    def _clean_reply_text(self, text: str) -> str:
-        cleaned = text.strip()
-        cleaned = re.sub(r"\s+(?:media|reactions?)\s*:\s*[^\n]+$", "", cleaned, flags=re.I)
-        cleaned = re.sub(r"^reply\s*:\s*", "", cleaned, flags=re.I)
-        return re.sub(r"\s{2,}", " ", cleaned).strip()
+        return _TURN_PARSER.extract_json(text)
 
     async def summarize(self, instruction: str, content: str, *, model: str | None = None) -> str:
         """One-shot completion with no memory or tools (used by self-reflection)."""

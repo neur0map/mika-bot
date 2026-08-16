@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import cast
 
 import discord
+
 from mika.conversation.contracts.media import MediaAsset, MediaKind
 
 _GIF_SUFFIXES = (".gif",)

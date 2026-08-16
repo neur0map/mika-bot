@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import cast
 
 import discord
+
 from mika.conversation.contracts.envelope import ConversationEnvelope, ReferencedMessage
 from mika.discord.ingress.media import media_from_message
 

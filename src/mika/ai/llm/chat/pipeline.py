@@ -87,6 +87,7 @@ async def run_turn(
     user_text: str,
     registry: ToolRegistry,
     use_tools: bool,
+    tool_names: tuple[str, ...] | None = None,
     model: str,
     temperature: float,
     max_tokens: int,
@@ -95,7 +96,7 @@ async def run_turn(
     search_query: str = "",
 ) -> str:
     """Drive one model turn, executing any tool calls, and return the reply text."""
-    schemas = registry.schemas() if (use_tools and registry) else None
+    schemas = registry.schemas(tool_names) if (use_tools and registry) else None
     if schemas is not None and not provider.supports_tool_calls:
         # The backend cannot call functions, so asking it to would just be ignored.
         # Run the search here instead and hand the model the results as text.

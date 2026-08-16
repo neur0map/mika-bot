@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import discord
+
 from mika.discord.ingress.media import media_from_message
 
 

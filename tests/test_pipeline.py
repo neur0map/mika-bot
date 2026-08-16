@@ -16,6 +16,7 @@ class FakeProvider:
     def __init__(self, results: list[ChatResult]) -> None:
         self._results = list(results)
         self.calls: list[list[Message]] = []
+        self.calls_with_tools: list[list[Message]] = []
 
     async def complete(
         self,
@@ -28,6 +29,7 @@ class FakeProvider:
         response_format: str | dict[str, Any] | None = None,
     ) -> ChatResult:
         self.calls.append(messages)
+        self.calls_with_tools.append(tools or [])
         self.response_formats = [*getattr(self, "response_formats", []), response_format]
         return self._results.pop(0)
 
@@ -91,6 +93,33 @@ async def test_json_mode_is_requested_without_tools() -> None:
     )
     assert out == '{"reply":"ok"}'
     assert provider.response_formats == [mika_turn_response_format()]
+
+
+async def test_pipeline_exposes_only_task_scoped_tool_names() -> None:
+    provider = FakeProvider([ChatResult(content="ok", tool_calls=[])])
+    registry = ToolRegistry()
+
+    async def handler(args: dict[str, Any]) -> str:
+        return "ok"
+
+    registry.register(Tool("web_search", "web", {}, handler))
+    registry.register(Tool("media_search", "media", {}, handler))
+
+    await run_turn(
+        provider,
+        system="s",
+        history=[],
+        user_text="latest score",
+        registry=registry,
+        use_tools=True,
+        tool_names=("web_search",),
+        model="m",
+        temperature=0.5,
+        max_tokens=10,
+    )
+
+    exposed = provider.calls_with_tools[0]
+    assert [schema["function"]["name"] for schema in exposed] == ["web_search"]
 
 
 class NoToolCallProvider(FakeProvider):

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import discord
+
 from mika.discord.ingress.envelope import envelope_from_message
 
 

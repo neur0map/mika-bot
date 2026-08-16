@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import discord
+
 from mika.ai.llm.social_policy import SocialContext
 from mika.ai.llm.turn import MediaChoice
 from mika.bot.media import search_klipy

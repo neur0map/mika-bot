@@ -112,47 +112,6 @@ def test_memory_context_includes_self_reflection_lessons() -> None:
     assert "vary reactions more" in context
 
 
-async def test_retry_if_unstructured_uses_valid_json_retry(monkeypatch: Any) -> None:
-    client = LLMClient()
-    first = client._parse_turn("reply: leaked label media: none")
-
-    async def fake_generate(*_args: Any, **_kwargs: Any) -> str:
-        return '{"reply":"clean now","reactions":[],"media":{"type":"none"}}'
-
-    monkeypatch.setattr(client, "_generate", fake_generate)
-    turn = await client._retry_if_unstructured(first, "system", [], "user", "hi")
-    assert turn.reply == "clean now"
-    assert turn.parse_status == "json"
-
-
-async def test_retry_if_unstructured_keeps_first_when_retry_fails(monkeypatch: Any) -> None:
-    client = LLMClient()
-    first = client._parse_turn("reply: keep this media: none")
-
-    async def fake_generate(*_args: Any, **_kwargs: Any) -> str:
-        return "still not json"
-
-    monkeypatch.setattr(client, "_generate", fake_generate)
-    turn = await client._retry_if_unstructured(first, "system", [], "user", "hi")
-    assert turn.reply == "keep this"
-    assert turn.parse_status == "labeled"
-
-
-async def test_retry_if_unstructured_disables_tools_and_requires_json(monkeypatch: Any) -> None:
-    client = LLMClient()
-    first = client._parse_turn("reply: leaked label media: none")
-    seen: dict[str, Any] = {}
-
-    async def capture_generate(*_args: Any, **kwargs: Any) -> str:
-        seen.update(kwargs)
-        return '{"reply":"clean now","reactions":[],"media":{"type":"none"}}'
-
-    monkeypatch.setattr(client, "_generate", capture_generate)
-    await client._retry_if_unstructured(first, "system", [], "user", "hi")
-    assert seen["use_tools"] is False
-    assert seen["require_json"] is True
-
-
 def test_gif_requests_skip_web_search_tools() -> None:
     client = LLMClient()
     assert client._should_use_tools("send a gif of watch me whip") is False
