@@ -1,9 +1,10 @@
 # Optional: long-term memory with Honcho
 
-Your bot already remembers recent conversation out of the box (built-in local
-memory). **Honcho** adds *semantic*, cross-session memory — it remembers people
-and facts over time. It's optional and needs **Docker**. Skip it if you're not
-sure; everything else works without it.
+Your bot already has local cross-session memory: recent channel history,
+explicit facts that users state about themselves, same-user/channel lexical
+recall, and aggregate feedback from reactions to Mika's messages. **Honcho** adds
+optional semantic recall on top. It needs **Docker**; everything else works
+without it.
 
 ## Easiest: let the bot set it up for you
 
@@ -41,6 +42,9 @@ Then set in your bot's `.env`: `MIKA_MEMORY_HONCHO_ENABLED=true` and
 
 - If Honcho is ever down, the bot **automatically falls back** to local memory —
   it never breaks your bot.
+- Local facts are scoped by Discord user ID and corrections replace the prior
+  value for the same fact key. Trace diagnostics store counts only, not fact or
+  message text.
 - Honcho's memory engine needs its own LLM key; `mika honcho up` reuses your bot's
   key. If you use a non-OpenAI provider and see derivation errors, adjust the
   provider settings in `var/honcho/.env`.

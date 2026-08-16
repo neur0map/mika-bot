@@ -61,8 +61,10 @@ class ConversationEngine:
             "ready",
             details={"media_count": len(envelope.visual_inputs), "mentioned": envelope.mentioned},
         )
-        with trace.measure("context"):
+        context_details: dict[str, object] = {}
+        with trace.measure("context", details=context_details):
             selected = await self._context.select(envelope)
+            context_details.update(selected.trace_details)
         participation = self._participation.plan(envelope, selected)
         trace.record(
             "participation",

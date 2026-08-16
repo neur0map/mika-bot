@@ -23,14 +23,24 @@ class SelectedContext:
     history: tuple[ContextMessage, ...] = ()
     memory: str = ""
     avoid_phrases: tuple[str, ...] = ()
+    fact_count: int = 0
+    match_count: int = 0
+    feedback_count: int = 0
 
     @property
     def trace_details(self) -> dict[str, object]:
         """Return counts only, never conversation content."""
-        return {
+        details: dict[str, object] = {
             "history_count": len(self.history),
             "avoid_phrase_count": len(self.avoid_phrases),
         }
+        if self.memory or self.fact_count or self.match_count or self.feedback_count:
+            details.update(
+                fact_count=self.fact_count,
+                match_count=self.match_count,
+                feedback_count=self.feedback_count,
+            )
+        return details
 
 
 @dataclass(frozen=True, slots=True)

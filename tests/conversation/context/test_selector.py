@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from mika.conversation.context import ContextSelector, TurnObservation, TurnObserver
+from mika.conversation.context.retrieval import MemoryRecall
 from mika.conversation.contracts import ConversationEnvelope
 
 
@@ -53,6 +54,23 @@ async def test_selector_preserves_order_names_and_bounded_assistant_phrases() ->
     assert selected.trace_details == {"history_count": 4, "avoid_phrase_count": 1}
 
 
+async def test_selector_includes_retrieved_memory_and_count_only_trace_details() -> None:
+    class Retriever:
+        async def retrieve(self, incoming: ConversationEnvelope) -> MemoryRecall:
+            return MemoryRecall("favorite game: Hades", 1, 2, 3)
+
+    selected = await ContextSelector(MemoryStore(), retriever=Retriever()).select(envelope())
+
+    assert selected.memory == "favorite game: Hades"
+    assert selected.trace_details == {
+        "history_count": 4,
+        "avoid_phrase_count": 2,
+        "fact_count": 1,
+        "match_count": 2,
+        "feedback_count": 3,
+    }
+
+
 async def test_observer_persists_visible_user_and_assistant_turns() -> None:
     memory = MemoryStore()
     observer = TurnObserver(memory)
@@ -88,3 +106,33 @@ async def test_observer_does_not_store_empty_assistant_reply() -> None:
 
     assert len(memory.remembered) == 1
     assert memory.remembered[0]["role"] == "user"
+
+
+async def test_observer_learns_only_explicit_user_facts() -> None:
+    class Facts:
+        def __init__(self) -> None:
+            self.items: list[tuple[str, str, str, str]] = []
+
+        async def upsert_fact(
+            self, user_id: str, fact_key: str, fact_value: str, source_message_id: str
+        ) -> None:
+            self.items.append((user_id, fact_key, fact_value, source_message_id))
+
+    facts = Facts()
+    explicit = envelope()
+    explicit = ConversationEnvelope(
+        explicit.message_id,
+        explicit.channel_id,
+        explicit.guild_id,
+        explicit.author_id,
+        explicit.author_name,
+        "actually my favorite game is Hades II",
+        explicit.mentioned,
+        explicit.created_at,
+    )
+
+    await TurnObserver(MemoryStore(), facts=facts).observe(
+        TurnObservation(explicit, "nice", "chat", 0.8)
+    )
+
+    assert facts.items == [("u1", "favorite_game", "Hades II", "m1")]

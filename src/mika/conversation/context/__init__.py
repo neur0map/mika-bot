@@ -6,11 +6,14 @@ from mika.conversation.context.contracts import (
     TurnObservation,
 )
 from mika.conversation.context.observer import TurnObserver
+from mika.conversation.context.retrieval import AffinityRetriever, MemoryRecall
 from mika.conversation.context.selector import ContextSelector
 
 __all__ = [
+    "AffinityRetriever",
     "ContextMessage",
     "ContextSelector",
+    "MemoryRecall",
     "SelectedContext",
     "TurnObservation",
     "TurnObserver",
