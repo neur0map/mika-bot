@@ -7,12 +7,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import discord
-
 from mika.ai.llm.social_policy import SocialContext
 from mika.ai.llm.turn import MediaChoice
 from mika.bot.media import search_klipy
+from mika.conversation.contracts.media import MediaAsset
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
+from mika.discord.ingress.envelope import envelope_from_message
+from mika.discord.ingress.media import media_from_message
 from mika.persistence.shared_archive import archive_event, archive_message
 
 if TYPE_CHECKING:
@@ -35,34 +37,22 @@ def _in_scope(message: discord.Message, allowed_guilds: set[str]) -> bool:
 
 
 def _media_from_message(message: discord.Message) -> list[dict[str, Any]]:
-    media: list[dict[str, Any]] = []
-    for item in message.attachments:
-        media.append(
-            {
-                "id": str(item.id),
-                "url": item.url,
-                "name": item.filename,
-                "contentType": item.content_type,
-                "size": item.size,
-                "kind": "image" if (item.content_type or "").startswith("image/") else "file",
-                "source": "attachment",
-            }
-        )
-    for index, embed in enumerate(message.embeds):
-        url = embed.video.url if embed.video else embed.image.url if embed.image else embed.url
-        if url:
-            media.append(
-                {
-                    "id": f"embed-{index}",
-                    "url": url,
-                    "sourceUrl": embed.url,
-                    "name": embed.title or embed.url or f"embed-{index}",
-                    "kind": "video" if embed.video else "image",
-                    "source": "embed",
-                    "embedType": embed.type,
-                }
-            )
-    return media
+    return _media_records(media_from_message(message))
+
+
+def _media_records(assets: tuple[MediaAsset, ...]) -> list[dict[str, Any]]:
+    return [
+        {
+            "url": asset.url,
+            "name": asset.filename,
+            "contentType": asset.content_type,
+            "kind": asset.kind,
+            "source": asset.source,
+            "width": asset.width,
+            "height": asset.height,
+        }
+        for asset in assets
+    ]
 
 
 def _media_context(media: list[dict[str, Any]]) -> str:
@@ -166,7 +156,8 @@ def setup(bot: BotApp) -> None:
     async def on_message(message: discord.Message) -> None:
         if bot.user is None or not _in_scope(message, allowed_guilds):
             return
-        inbound_media = _media_from_message(message)
+        envelope = envelope_from_message(message, bot.user.id)
+        inbound_media = _media_records(envelope.visual_inputs)
         content = message.clean_content or ("[media/message with no text]" if inbound_media else "")
         if message.author.id != bot.user.id:
             role = "bot" if message.author.bot else "user"
