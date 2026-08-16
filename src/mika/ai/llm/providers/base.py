@@ -33,6 +33,11 @@ class ChatResult:
 class ChatProvider(Protocol):
     """The contract every LLM backend implements."""
 
+    #: Whether the backend can return function calls. False for wire protocols
+    #: without function-calling (Codex over ACP), which makes the caller run the
+    #: tool itself and feed the result in as text.
+    supports_tool_calls: bool
+
     async def complete(
         self,
         messages: list[Message],

@@ -8,7 +8,7 @@ import httpx
 from rich.console import Console
 from rich.table import Table
 
-from mika.ai.llm.providers.openai_compatible import OpenAICompatibleProvider
+from mika.ai.llm.providers.factory import build_provider, is_codex_provider
 from mika.ai.llm.tools.web_search import web_search_tool
 from mika.core.config import get_settings
 from mika.persistence.engine import init_db
@@ -47,15 +47,29 @@ async def _check_db() -> tuple[bool, str]:
 
 
 async def _check_llm() -> tuple[bool, str]:
-    llm = get_settings().llm
-    if not llm.api_key or llm.api_key == "CHANGEME":
+    settings = get_settings()
+    llm = settings.llm
+    codex = is_codex_provider(llm.provider)
+    # Codex authenticates through `codex login`, so it has no API key to check.
+    if not codex and (not llm.api_key or llm.api_key == "CHANGEME"):
         return False, "no API key (run mika setup)"
+    provider = build_provider(llm, data_dir=settings.data_dir)
     try:
-        provider = OpenAICompatibleProvider(base_url=llm.base_url, api_key=llm.api_key)
         await provider.complete([{"role": "user", "content": "ok"}], model=llm.model, max_tokens=16)
     except Exception as error:
-        return False, f"{type(error).__name__}: {str(error)[:45]}"
-    return True, f"{llm.model} reachable"
+        hint = " (is codex-acp installed and `codex login` done?)" if codex else ""
+        return False, f"{type(error).__name__}: {str(error)[:45]}{hint}"
+    finally:
+        await _release(provider)
+    label = f"codex/{llm.codex_model or 'default'}" if codex else llm.model
+    return True, f"{label} reachable"
+
+
+async def _release(provider: object) -> None:
+    """Shut down a provider that holds a subprocess (Codex/ACP); no-op otherwise."""
+    closer = getattr(provider, "aclose", None)
+    if closer is not None:
+        await closer()
 
 
 async def _check_web() -> tuple[bool, str]:

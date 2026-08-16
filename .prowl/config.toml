@@ -1,0 +1,11 @@
+languages = ["auto"]
+ignore = [".mcp.json", "opencode.json", "*.log", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.ttf", "*.otf", "*.woff", "*.woff2"]
+
+[ai]
+  enabled = true
+  embed_model = "qwen3-embedding:4b"
+  rerank_model = ""
+  assist_model = "gemma4:e2b"
+  ollama_url = "http://localhost:11434"
+  provider = "agent"
+  agent_command = "claude -p --model haiku"

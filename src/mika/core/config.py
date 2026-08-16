@@ -41,7 +41,12 @@ class DiscordSettings(BaseSettings):
 
 
 class LLMSettings(BaseSettings):
-    """Primary and fallback LLM provider configuration (OpenAI-compatible)."""
+    """Primary and fallback LLM backend configuration.
+
+    `provider` selects the backend: any OpenAI-compatible gateway by default, or
+    `codex` to drive the Codex CLI over ACP on a ChatGPT subscription. The
+    `codex_*` fields are read only by the Codex backend.
+    """
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore", env_prefix="MIKA_LLM_")
 
@@ -51,9 +56,17 @@ class LLMSettings(BaseSettings):
     model: str = "openai/gpt-4o-mini"
     temperature: float = 0.8
     max_tokens: int = 600
+    fallback_provider: str = ""
     fallback_base_url: str = ""
     fallback_api_key: str = ""
     fallback_model: str = ""
+
+    # Codex over ACP (provider="codex"). Auth comes from `codex login`, not a key.
+    codex_command: str = "codex-acp"
+    codex_cwd: str = ""  # empty: a "codex" folder under the data dir
+    codex_mode: str = "read-only"
+    codex_model: str = ""
+    codex_timeout: float = 90.0
 
     @property
     def has_fallback(self) -> bool:

@@ -66,3 +66,11 @@ coverage.xml
 *.log
 *.tgz
 *.tar.gz
+# prowl-agent: derived state
+.prowl/index.db*
+.prowl/cache/
+.prowl/logs/
+.prowl/editor/
+.prowl/setup-applies.json
+.prowl-setup.lock
+# /prowl-agent: derived state
