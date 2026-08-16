@@ -175,3 +175,44 @@ Toolchain: **uv** (env/deps), **ruff** (lint+format), **mypy** (types),
 - [ ] If you added/changed a directory's contents, its `README.md` still describes
       it accurately.
 - [ ] No secrets; commit message is clean (no attribution).
+
+<!-- prowl-agent -->
+## Prowl project context
+
+This repo has a Prowl index of its files, symbols, and how they connect. To find
+code, read one symbol, trace who calls it, or check what a change touches,
+**query Prowl first** -- do not grep or read whole files just to locate things.
+Prowl reindexes what changed before each query, so answers stay current, and it
+returns ranked, cited file:line results in one call instead of a grep hit list
+you then open files to disambiguate.
+
+The same index is reachable two ways, and every agent should know both:
+
+- **Preferred -- Prowl MCP tools** (they appear in your tool list when your
+  harness wires Prowl as an MCP server): search_context (where/how does X work),
+  read_symbol (one symbol's source), outline (a file's structure, no bodies),
+  find_references (call sites), analyze_change (blast radius before an edit), and
+  sketch_ui (how a UI looks, from source).
+- **Opt-in -- the prowl-agent CLI** (same capabilities, for when MCP is not
+  wired): overview, find <name>, outline <path>, def <name>, references <name>,
+  callers|callees|relations <path>, impact <path>, search <text>, wip, and
+  changed / doctor after edits.
+
+Keep grep and glob for literal-string and filename scans only. CLI output is
+token-lean TOON by default; add --format human|toon|json|markdown.
+<!-- /prowl-agent -->
+
+<!-- prowl-agent:map -->
+## Prowl project map
+
+Auto-generated from the Prowl index, refreshed on each `overview`/`init`. Prefer retrieving from Prowl (and reading the cited files) over grepping or relying on training memory; this is the current shape of the repo.
+
+- size: 270 files, 1489 symbols, 846 edges (resolved 297, external deps 549, unresolved 0)
+- languages: python:192 markdown:73 bash:2 yaml:2 toml:1
+- subsystems: src/mika(102,python) · dev-testing(38,python) · tests(13,python) · tools/hooks(6,python) · src/mika(3,python) · src/mika(2,python)
+- entrypoints: .pre-commit-config.yaml · dev-testing/conftest.py · dev-testing/harness.py · dev-testing/test_admin.py · dev-testing/test_animated.py · dev-testing/test_anime.py · dev-testing/test_antispam.py · dev-testing/test_convert.py · (+99 more)
+- central files (most depended-on): src/mika/core/config.py · src/mika/bot/commands/__init__.py · src/mika/core/logging.py · src/mika/persistence/base.py · src/mika/bot/client.py
+- read these guides first: README.md · AGENTS.md · ARCHITECTURE.md · docs/GETTING-STARTED.md
+
+Depth on demand: `prowl-agent find|def|outline|references <name>`, `search <text>`, `context search "<question>"`, `sketch <ui>`.
+<!-- /prowl-agent:map -->

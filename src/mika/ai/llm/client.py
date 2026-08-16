@@ -13,7 +13,7 @@ from mika.ai.llm.chat.prompt import build_system_prompt
 from mika.ai.llm.memory.honcho import HonchoMemory
 from mika.ai.llm.memory.store import LocalMemory
 from mika.ai.llm.providers.base import ChatProvider, Message
-from mika.ai.llm.providers.openai_compatible import OpenAICompatibleProvider
+from mika.ai.llm.providers.factory import build_fallback_provider, build_provider
 from mika.ai.llm.tools.registry import ToolRegistry
 from mika.ai.llm.tools.web_search import web_search_tool
 from mika.ai.llm.turn import MediaChoice, MikaTurn
@@ -81,15 +81,9 @@ class LLMClient:
     def __init__(self) -> None:
         settings = get_settings()
         self._settings = settings
-        self._provider: ChatProvider = OpenAICompatibleProvider(
-            base_url=settings.llm.base_url, api_key=settings.llm.api_key
-        )
-        self._fallback: ChatProvider | None = (
-            OpenAICompatibleProvider(
-                base_url=settings.llm.fallback_base_url, api_key=settings.llm.fallback_api_key
-            )
-            if settings.llm.has_fallback
-            else None
+        self._provider: ChatProvider = build_provider(settings.llm, data_dir=settings.data_dir)
+        self._fallback: ChatProvider | None = build_fallback_provider(
+            settings.llm, data_dir=settings.data_dir
         )
         self._local = LocalMemory()
         self._honcho = HonchoMemory() if settings.memory.honcho_enabled else None
@@ -102,6 +96,13 @@ class LLMClient:
         if self._honcho is not None:
             await self._honcho.ensure()
 
+    async def shutdown(self) -> None:
+        """Release providers that own a subprocess (Codex/ACP)."""
+        for provider in (self._provider, self._fallback):
+            closer = getattr(provider, "aclose", None)
+            if closer is not None:
+                await closer()
+
     async def reply(
         self,
         *,
@@ -110,8 +111,13 @@ class LLMClient:
         author_name: str,
         text: str,
         media_context: str = "",
+        media_urls: list[str] | None = None,
     ) -> MikaTurn:
-        """Produce one structured reply decision and persist the exchange."""
+        """Produce one structured reply decision and persist the exchange.
+
+        `media_urls` are image/GIF links from the message; providers that support
+        vision see the picture itself, not just the `media_context` label.
+        """
         history = await self._build_history(channel_id)
         user_input = self._compose_user_input(text, media_context)
         generation_input = self._compose_generation_input(user_input, history)
@@ -122,15 +128,20 @@ class LLMClient:
             system,
             history,
             f"{author_name}: {generation_input}",
-            use_tools=self._should_use_tools(generation_input),
+            # Routing decisions read `user_input`, never `generation_input`: the
+            # latter appends Mika's own recent wording, so one past "lmao" or "💀"
+            # would look like the user being jokey and switch tools off for good.
+            use_tools=self._should_use_tools(user_input),
             require_json=True,
+            images=media_urls,
+            search_query=text,
         )
         turn = self._parse_turn(raw)
         turn = await self._retry_if_unstructured(
-            turn, system, history, author_name, generation_input
+            turn, system, history, author_name, generation_input, media_urls
         )
-        turn = self._force_requested_media(turn, generation_input)
-        turn = self._gate_media_choice(turn, generation_input)
+        turn = self._force_requested_media(turn, user_input)
+        turn = self._gate_media_choice(turn, user_input)
         turn = replace(turn, reply=self._limit_reply(turn.reply, turn.intent))
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
@@ -168,6 +179,7 @@ class LLMClient:
         history: list[Message],
         author_name: str,
         generation_input: str,
+        images: list[str] | None = None,
     ) -> MikaTurn:
         if turn.parse_status == "json":
             return turn
@@ -178,7 +190,7 @@ class LLMClient:
             "and confidence.]"
         )
         retry_raw = await self._generate(
-            system, history, retry_input, use_tools=False, require_json=True
+            system, history, retry_input, use_tools=False, require_json=True, images=images
         )
         retry_turn = self._parse_turn(retry_raw)
         return retry_turn if retry_turn.parse_status == "json" else turn
@@ -256,6 +268,8 @@ class LLMClient:
         *,
         use_tools: bool | None = None,
         require_json: bool = False,
+        images: list[str] | None = None,
+        search_query: str = "",
     ) -> str:
         settings = self._settings
         structured_user_text = self._structured_instruction(user_text)
@@ -272,6 +286,8 @@ class LLMClient:
                 temperature=settings.llm.temperature,
                 max_tokens=settings.llm.max_tokens,
                 require_json=require_json,
+                images=images,
+                search_query=search_query,
             )
         except Exception as primary_error:
             logger.warning("primary provider failed: %s", primary_error)
@@ -289,6 +305,8 @@ class LLMClient:
                 temperature=settings.llm.temperature,
                 max_tokens=settings.llm.max_tokens,
                 require_json=require_json,
+                images=images,
+                search_query=search_query,
             )
         except Exception as fallback_error:
             logger.error("fallback provider failed: %s", fallback_error)
@@ -325,7 +343,7 @@ class LLMClient:
             status = "labeled" if labeled else "fallback"
             return MikaTurn(reply=reply or _BUSY_REPLY, parse_status=status, raw=raw)
         reply = str(data.get("reply") or data.get("message") or "").strip()
-        raw_reactions = data.get("reactions") if isinstance(data.get("reactions"), list) else []
+        raw_reactions = self._reaction_list(data.get("reactions"))
         reactions = tuple(str(item) for item in raw_reactions if str(item) in _ALLOWED_REACTIONS)[
             :1
         ]
@@ -353,6 +371,19 @@ class LLMClient:
             schema_version=schema_version or _TURN_SCHEMA_VERSION,
             raw=raw,
         )
+
+    def _reaction_list(self, value: Any) -> list[Any]:
+        """Accept a bare emoji where the schema asks for an array.
+
+        Providers that cannot enforce a strict JSON schema (Codex over ACP) often
+        answer `"reactions": "👀"` instead of `["👀"]`. Dropping that on the floor
+        silently loses the reaction, so take the scalar as a one-item list.
+        """
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []
 
     def _bounded_confidence(self, value: Any) -> float:
         try:

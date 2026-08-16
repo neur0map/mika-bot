@@ -81,10 +81,32 @@ def _media_context(media: list[dict[str, Any]]) -> str:
         else:
             parts.append(f"- {label}")
     return (
-        "[incoming media context: treat this socially; decide whether it reads as "
-        "a joke, sarcasm, flirt, reaction bait, hype, or serious share. Do not describe "
-        "the media unless the user asks.]\n" + "\n".join(parts)
+        "[incoming media context: images are attached for you to look at. Treat them "
+        "socially; decide whether it reads as a joke, sarcasm, flirt, reaction bait, "
+        "hype, or serious share. Do not narrate or caption the media unless the user "
+        "asks what it is - then answer plainly.]\n" + "\n".join(parts)
     )
+
+
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
+def _media_urls(media: list[dict[str, Any]]) -> list[str]:
+    """Pick the links a vision-capable model can actually look at.
+
+    Attachments carry a content type; embeds (Tenor/Giphy links) usually do not,
+    so fall back to the file extension on the URL.
+    """
+    urls: list[str] = []
+    for item in media:
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        content_type = str(item.get("contentType") or "")
+        looks_like_image = url.split("?")[0].lower().endswith(_IMAGE_SUFFIXES)
+        if content_type.startswith("image/") or looks_like_image:
+            urls.append(url)
+    return urls
 
 
 def _message_record(message: discord.Message, role: str, content: str) -> dict[str, Any]:
@@ -167,6 +189,7 @@ def setup(bot: BotApp) -> None:
                     author_name=message.author.display_name,
                     text=text,
                     media_context=media_context,
+                    media_urls=_media_urls(inbound_media),
                 )
         except Exception as error:
             logger.exception("reply failed: %s", error)

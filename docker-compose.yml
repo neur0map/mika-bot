@@ -2,13 +2,20 @@
 # once, or copy .env.example to .env and fill it in), then: docker compose up -d
 services:
   mika:
-    build: .
+    build:
+      context: .
+      args:
+        # true = bake the Codex CLI + ACP adapter in (needed for MIKA_LLM_PROVIDER=codex)
+        INSTALL_CODEX: ${MIKA_INSTALL_CODEX:-false}
     container_name: mika
     restart: unless-stopped
     env_file: .env
     volumes:
       - ./var:/app/var # conversation memory + logs persist across restarts
       - ${MIKA_SHARED_ARCHIVE_HOST_PATH:-./var/shared-archive}:/shared/mika-js-data
+      # Codex auth (~/.codex). Read-write: Codex refreshes its own tokens.
+      # Harmless when the Codex backend is off - nothing reads it.
+      - ${MIKA_CODEX_HOME:-./var/codex-home}:/root/.codex
     networks:
       - default
       - honcho

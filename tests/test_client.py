@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from mika.ai.llm.client import LLMClient
+from mika.ai.llm.tools.registry import Tool, ToolRegistry
+
+
+async def _noop_handler(args: dict[str, Any]) -> str:
+    return "results"
 
 
 def test_parse_turn_strips_labeled_output_leak() -> None:
@@ -217,3 +222,28 @@ def test_social_reply_is_trimmed_to_a_short_discord_turn() -> None:
     client = LLMClient()
     reply = "one " * 100
     assert len(client._limit_reply(reply, "joke")) <= 180
+
+
+def test_routing_ignores_mikas_own_recent_wording() -> None:
+    """A past joke of Mika's must not switch off the user's web search.
+
+    `generation_input` appends recent assistant phrasing so the model varies its
+    rhythm. Routing that text would let one old "lmao ... 💀" read as the user
+    being jokey and disable tools for the rest of the conversation.
+    """
+    client = LLMClient.__new__(LLMClient)
+    client._tools = ToolRegistry()
+    client._tools.register(
+        Tool(name="web_search", description="s", parameters={}, handler=_noop_handler)
+    )
+
+    user_input = "who won the latest F1 race"
+    history: list[dict[str, object]] = [
+        {"role": "user", "content": "carlos: hey"},
+        {"role": "assistant", "content": "lmao no clue bro 💀"},
+    ]
+    generation_input = LLMClient._compose_generation_input(client, user_input, history)
+
+    assert LLMClient._should_use_tools(client, user_input) is True
+    # The poisoned text is what the old code routed on.
+    assert LLMClient._should_use_tools(client, generation_input) is False

@@ -73,6 +73,8 @@ class BotApp(commands.Bot):
             self._web_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._web_task
+        with contextlib.suppress(Exception):
+            await self.llm.shutdown()
         await super().close()
 
 

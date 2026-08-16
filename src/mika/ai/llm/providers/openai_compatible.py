@@ -13,6 +13,8 @@ from mika.ai.llm.providers.base import ChatResult, Message, ResponseFormat, Tool
 class OpenAICompatibleProvider:
     """Talks to any OpenAI-compatible chat-completions endpoint."""
 
+    supports_tool_calls = True
+
     def __init__(self, *, base_url: str, api_key: str) -> None:
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key or "missing")
 
