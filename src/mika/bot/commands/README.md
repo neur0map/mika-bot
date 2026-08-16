@@ -1,7 +1,10 @@
-# bot/commands/
+# bot/commands
 
-One file per slash command. To stay under Discord's 100-command cap, group related
-actions as subcommands of a single `/category`. `ping.py` is the template.
+Legacy slash-command catalog retained for compatibility and its offline harness. The
+conversation-only runtime does not call `register_all` or sync this tree.
+
+Active conversation abilities live one-per-directory under
+`conversation/tools/abilities`; new runtime capabilities must not be added here.
 
 **Never hardcode the codename or a bot name here.** Command names, descriptions, and
 replies are user-facing: use neutral wording, and `config.persona.name` for the

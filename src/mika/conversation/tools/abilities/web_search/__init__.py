@@ -1,4 +1,4 @@
-"""Compatibility import for the isolated conversation web-search ability."""
+"""Public web-search ability."""
 
 from mika.conversation.tools.abilities.web_search.tool import web_search_tool
 

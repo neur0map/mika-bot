@@ -13,7 +13,6 @@ from mika.ai.llm.memory.store import LocalMemory
 from mika.ai.llm.providers.base import ChatProvider, Message
 from mika.ai.llm.providers.factory import build_fallback_provider, build_provider
 from mika.ai.llm.tools.registry import ToolRegistry
-from mika.ai.llm.tools.web_search import web_search_tool
 from mika.ai.llm.turn import MediaChoice, MikaTurn
 from mika.conversation.context import SelectedContext
 from mika.conversation.contracts import ConversationEnvelope
@@ -27,6 +26,7 @@ from mika.conversation.generation import (
 from mika.conversation.media import TemporalMediaSampler, media_context
 from mika.conversation.participation import ParticipationDecision
 from mika.conversation.tools import ToolPlan
+from mika.conversation.tools.abilities.web_search import web_search_tool
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 

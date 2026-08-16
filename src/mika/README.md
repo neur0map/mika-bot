@@ -8,8 +8,13 @@ import higher ones), keeping the code easy to follow and change.
 
 | Domain | Package | Audience | Shipped? |
 |---|---|---|---|
-| **Server** | `bot/` (incl. `bot/features/`) | everyone in a guild (bot account) | yes - the product |
-| **AI** | `ai/llm/` + `ai/learning/` | powers the bot; learning is opt-in | yes (learning optional) |
+| **Conversation** | `conversation/` | staged context, judgment, tools, generation, actions | yes - core product |
+| **Discord** | `discord/` + `bot/events/` | official Bot API ingress and visible execution | yes - adapter |
+| **AI** | `ai/llm/` + `ai/learning/` | providers and optional reflection | yes |
+
+`bot/commands/` is a dormant compatibility catalog used by the offline harness; the production
+client does not register application commands. Active network abilities are isolated one per folder
+under `conversation/tools/abilities/`.
 
 ## Shared foundation & operator layers
 

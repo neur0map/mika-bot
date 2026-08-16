@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import discord
 
-from mika.bot.media import search_klipy
 from mika.conversation.contracts.media import MediaAsset
+from mika.conversation.tools.abilities.media_search import search_klipy
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 from mika.discord.execution.archive import build_visible_records

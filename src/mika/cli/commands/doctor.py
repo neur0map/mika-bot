@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from mika.ai.llm.providers.factory import build_provider, is_codex_provider
-from mika.ai.llm.tools.web_search import web_search_tool
+from mika.conversation.tools.abilities.web_search import web_search_tool
 from mika.core.config import get_settings
 from mika.persistence.engine import init_db
 
