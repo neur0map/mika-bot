@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mika.ai.learning.reflection import last_reflection
 from mika.ai.llm.chat.pipeline import run_turn
@@ -19,6 +19,9 @@ from mika.ai.llm.tools.web_search import web_search_tool
 from mika.ai.llm.turn import MediaChoice, MikaTurn
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from mika.conversation.trace_service import TurnTraceService
 
 logger = get_logger(__name__)
 
@@ -112,30 +115,47 @@ class LLMClient:
         text: str,
         media_context: str = "",
         media_urls: list[str] | None = None,
+        trace: TurnTraceService | None = None,
     ) -> MikaTurn:
         """Produce one structured reply decision and persist the exchange.
 
         `media_urls` are image/GIF links from the message; providers that support
         vision see the picture itself, not just the `media_context` label.
         """
-        history = await self._build_history(channel_id)
+        if trace is None:
+            history = await self._build_history(channel_id)
+        else:
+            with trace.measure("retrieval"):
+                history = await self._build_history(channel_id)
         user_input = self._compose_user_input(text, media_context)
         generation_input = self._compose_generation_input(user_input, history)
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         reflection, _ = await last_reflection()
         system = build_system_prompt(self._memory_context(recall, reflection))
-        raw = await self._generate(
-            system,
-            history,
-            f"{author_name}: {generation_input}",
-            # Routing decisions read `user_input`, never `generation_input`: the
-            # latter appends Mika's own recent wording, so one past "lmao" or "💀"
-            # would look like the user being jokey and switch tools off for good.
-            use_tools=self._should_use_tools(user_input),
-            require_json=True,
-            images=media_urls,
-            search_query=text,
-        )
+        use_tools = self._should_use_tools(user_input)
+        if trace is not None:
+            trace.record("context", "ready", details={"history_count": len(history)})
+            trace.record("tools", "eligible" if use_tools else "skipped")
+
+        async def generate() -> str:
+            return await self._generate(
+                system,
+                history,
+                f"{author_name}: {generation_input}",
+                # Routing decisions read `user_input`, never `generation_input`: the
+                # latter appends Mika's own recent wording, so one past joke would
+                # look like the user being jokey and switch tools off for good.
+                use_tools=use_tools,
+                require_json=True,
+                images=media_urls,
+                search_query=text,
+            )
+
+        if trace is None:
+            raw = await generate()
+        else:
+            with trace.measure("generation"):
+                raw = await generate()
         turn = self._parse_turn(raw)
         turn = await self._retry_if_unstructured(
             turn, system, history, author_name, generation_input, media_urls

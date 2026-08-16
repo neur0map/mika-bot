@@ -5,16 +5,20 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import discord
 from mika.ai.llm.social_policy import SocialContext
 from mika.ai.llm.turn import MediaChoice
 from mika.bot.media import search_klipy
 from mika.conversation.contracts.media import MediaAsset
+from mika.conversation.trace_service import TurnTraceService
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
 from mika.discord.ingress.envelope import envelope_from_message
 from mika.discord.ingress.media import media_from_message
+from mika.persistence.conversations.traces import TurnTraceRepository
+from mika.persistence.engine import session
 from mika.persistence.shared_archive import archive_event, archive_message
 
 if TYPE_CHECKING:
@@ -147,6 +151,15 @@ async def _archive_visible_turn(is_silent: bool, record: dict[str, Any]) -> None
         await archive_message(record)
 
 
+async def _persist_turn_trace(trace: TurnTraceService) -> None:
+    """Persist diagnostics without affecting visible Discord behavior."""
+    try:
+        async with session() as database:
+            await trace.persist(TurnTraceRepository(database))
+    except Exception:
+        logger.warning("turn trace persistence failed", exc_info=True)
+
+
 def setup(bot: BotApp) -> None:
     """Register the on_message handler."""
     free_channels = set(get_settings().discord.response_channel_id_list)
@@ -168,6 +181,12 @@ def setup(bot: BotApp) -> None:
         free_chat = str(message.channel.id) in free_channels
         if not mentioned and not free_chat:
             return
+        trace = TurnTraceService(str(uuid4()), str(message.id), str(message.channel.id))
+        trace.record(
+            "ingress",
+            "ready",
+            details={"media_count": len(inbound_media), "mentioned": mentioned},
+        )
         text = message.clean_content.replace(f"@{bot.user.display_name}", "").strip()
         media_context = _media_context(inbound_media)
         if not text and not media_context:
@@ -181,9 +200,11 @@ def setup(bot: BotApp) -> None:
                     text=text,
                     media_context=media_context,
                     media_urls=_media_urls(inbound_media),
+                    trace=trace,
                 )
         except Exception as error:
             logger.exception("reply failed: %s", error)
+            await _persist_turn_trace(trace)
             return
         context = SocialContext(
             channel_id=str(message.channel.id),
@@ -193,6 +214,11 @@ def setup(bot: BotApp) -> None:
         )
         policy_decision = bot.social_policy.apply(turn, context)
         turn = policy_decision.turn
+        trace.record(
+            "policy",
+            "suppressed" if policy_decision.suppression_reason else "allowed",
+            reason=policy_decision.suppression_reason,
+        )
         applied_reactions: list[str] = []
         for emoji in turn.reactions:
             try:
@@ -279,3 +305,13 @@ def setup(bot: BotApp) -> None:
                 },
             }
         )
+        trace.record(
+            "execution",
+            "silent" if turn.is_silent else "visible",
+            details={
+                "reply_sent": sent is not None,
+                "reaction_count": len(applied_reactions),
+                "media_sent": media_url is not None,
+            },
+        )
+        await _persist_turn_trace(trace)
