@@ -1,0 +1,5 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Sunday 03:15 in the host's configured timezone. Use flock to prevent overlap.
+15 3 * * 0 root /usr/bin/flock -n /run/lock/mika-discord-archive.lock /srv/mika-discord-archive/run-weekly

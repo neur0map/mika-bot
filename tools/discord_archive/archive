@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+ARCHIVE_ROOT=${MIKA_ARCHIVE_ROOT:-/srv/mika-discord-archive}
+SOURCE_ROOT=${MIKA_ARCHIVE_SOURCE:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
+PYTHON=${MIKA_ARCHIVE_PYTHON:-$ARCHIVE_ROOT/.venv/bin/python}
+
+export MIKA_ARCHIVE_ROOT="$ARCHIVE_ROOT"
+export PYTHONPATH="$SOURCE_ROOT"
+exec "$PYTHON" -m mika_archive.cli "$@"
