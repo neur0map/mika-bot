@@ -20,8 +20,14 @@ from mika.conversation.evaluation.adapter import (
     EvidenceRecordingGenerator,
     visible_from_action,
 )
+from mika.conversation.evaluation.expression_benchmark import compare_style
 from mika.conversation.participation import ParticipationPlanner
+from mika.conversation.skills.natural_expression.human_style import (
+    analyze_messages,
+    load_archive_profiles,
+)
 from mika.conversation.tools import ToolPlanner
+from mika.core.config import get_settings
 
 _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURE = _ROOT / "tests" / "fixtures" / "conversation_benchmark_v1.json"
@@ -92,6 +98,9 @@ async def _staged() -> dict[str, object]:
     categories: dict[str, list[float]] = {}
     for result in report.results:
         categories.setdefault(result.category, []).append(result.score)
+    replies = [result.visible_turn.reply for result in report.results if result.visible_turn.reply]
+    human_style = load_archive_profiles(get_settings().shared_archive_path).server
+    expression = compare_style(human_style, analyze_messages(replies))
     return {
         "version": 1,
         "mode": "staged",
@@ -100,6 +109,12 @@ async def _staged() -> dict[str, object]:
         "categories": {
             category: round(sum(scores) / len(scores), 4)
             for category, scores in sorted(categories.items())
+        },
+        "expression": {
+            "passed": expression.passed,
+            "failures": list(expression.failures),
+            "human": asdict(expression.human),
+            "candidate": asdict(expression.candidate),
         },
         "results": [asdict(result) for result in report.results],
     }
@@ -130,6 +145,8 @@ def main() -> None:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(f"{rendered}\n", encoding="utf-8")
     print(rendered)  # noqa: T201
+    if not arguments.dry_run and not bool(payload["expression"]["passed"]):  # type: ignore[index]
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

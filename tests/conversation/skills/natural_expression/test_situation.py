@@ -1,6 +1,10 @@
 """Situation assessment and Unicode expression semantics."""
 
-from mika.conversation.skills.natural_expression import assess_situation, unicode_candidates
+from mika.conversation.skills.natural_expression import (
+    assess_situation,
+    infer_intent,
+    unicode_candidates,
+)
 
 
 def test_serious_or_uncertain_situation_prefers_abstention() -> None:
@@ -31,3 +35,10 @@ def test_catalog_has_broad_semantics_without_forcing_usage() -> None:
     assert candidates
     assert all(item.kind == "unicode" for item in candidates)
     assert all(item.confidence < 1.0 for item in candidates)
+
+
+def test_intent_hint_detects_clear_social_situations_only() -> None:
+    assert infer_intent("great, another meeting about meetings") == "sarcasm"
+    assert infer_intent("we actually won") == "hype"
+    assert infer_intent("today was rough") == "comfort"
+    assert infer_intent("can you check this") == "chat"

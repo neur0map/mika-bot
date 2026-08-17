@@ -1,5 +1,17 @@
 # Mikav2 changelog
 
+## 2026-08-17 — Natural expression skill
+
+- Added aggregate server, channel, and bounded per-person writing profiles learned from the local
+  archive without retaining message bodies in the runtime profile.
+- Added situation-aware Unicode and rename-safe custom emoji profiles with conservative confidence,
+  availability, role, and operator-correction support.
+- Added measured guidance and validation for reply length, sparse emoji use, sentence cadence,
+  conspicuous dashes, and repeated openings.
+- Extended the 48-case live staged benchmark with human-distribution gates. The final candidate
+  measured 5 median words, 2.5% inline emoji, 0% em dashes, and 2.5% multi-sentence replies against
+  human baselines of 5 words, 4.4%, 0.14%, and 2.5%; every expression gate passed.
+
 ## 2026-07-19 — Conversation pipeline audit and social-turn reliability
 
 - Audited 241 retained Mikav2 decisions and identified the main live quality failures:

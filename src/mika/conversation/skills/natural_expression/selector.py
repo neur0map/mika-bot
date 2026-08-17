@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from mika.conversation.skills.natural_expression.contracts import (
     EmojiProfile,
     ExpressionCandidate,
@@ -38,12 +40,20 @@ class ExpressionSelector:
                 if not profile.available or profile.family not in situation.families:
                     continue
                 repetition_penalty = 0.3 if profile.value in snapshot.recent_emoji else 0.0
-                score = profile.confidence * (0.9 + min(style.emoji_rate, 0.1)) - repetition_penalty
+                family_bonus = 0.08 if profile.family == situation.families[0] else 0.0
+                score = (
+                    profile.confidence * (0.9 + min(style.emoji_rate, 0.1))
+                    + family_bonus
+                    - repetition_penalty
+                )
                 if score >= _MIN_CANDIDATE_SCORE:
                     ranked.append(ExpressionCandidate(profile, score, "situation_match"))
         ranked.sort(key=lambda item: item.score, reverse=True)
+        guided_situation = (
+            replace(situation, emoji_mode="encouraged") if ranked else situation
+        )
         return ExpressionGuidance(
-            situation=situation,
+            situation=guided_situation,
             candidates=tuple(ranked[:3]),
             avoid_emoji=snapshot.recent_emoji,
             avoid_dash=style.em_dash_rate < _RARE_DASH_RATE or bool(snapshot.dash_ages),

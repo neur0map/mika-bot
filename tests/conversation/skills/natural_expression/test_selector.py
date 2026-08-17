@@ -39,3 +39,13 @@ def test_validator_removes_unjustified_emoji_and_normalizes_generated_dash() -> 
     guidance = skill.guide("c", "okay", "chat", 0.7, mentioned=False)
 
     assert skill.validate("yeah — sure 😏", guidance) == "yeah, sure"
+
+
+def test_validator_collapses_polished_multi_sentence_cadence() -> None:
+    skill = NaturalExpressionSkill(_SERVER)
+    guidance = skill.guide("c", "okay", "chat", 0.7, mentioned=False)
+
+    assert (
+        skill.validate("Rude. Unfortunately accurate.", guidance) == "Rude, unfortunately accurate."
+    )
+    assert skill.validate("Yes. It happened.", guidance) == "Yes, it happened."

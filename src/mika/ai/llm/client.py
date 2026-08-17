@@ -25,7 +25,7 @@ from mika.conversation.generation import (
 )
 from mika.conversation.media import TemporalMediaSampler, media_context
 from mika.conversation.participation import ParticipationDecision
-from mika.conversation.skills.natural_expression import NaturalExpressionSkill
+from mika.conversation.skills.natural_expression import NaturalExpressionSkill, infer_intent
 from mika.conversation.skills.natural_expression.guild_catalog import (
     GuildEmojiCatalog,
     GuildEmojiDescriptor,
@@ -164,11 +164,12 @@ class LLMClient:
             with trace.measure("retrieval"):
                 history = await self._build_history(channel_id)
         user_input = self._compose_user_input(text, media_context)
+        intent_hint = infer_intent(user_input)
         guidance = self._expression.guide(
             channel_id,
             user_input,
-            "chat",
-            0.7,
+            intent_hint,
+            0.9 if intent_hint != "chat" else 0.7,
             mentioned=True,
             channel_style=self._style_profiles.channels.get(channel_id),
             person_style=self._style_profiles.people.get(author_id),
@@ -228,11 +229,12 @@ class LLMClient:
         channel_style = self._style_profiles.channels.get(envelope.channel_id)
         person_style = self._style_profiles.people.get(envelope.author_id)
         profiles = self._emoji_catalog.profiles(envelope.guild_id)
+        intent_hint = infer_intent(user_input)
         guidance = self._expression.guide(
             envelope.channel_id,
             user_input,
-            "chat",
-            0.7,
+            intent_hint,
+            0.9 if intent_hint != "chat" else 0.7,
             envelope.mentioned,
             profiles=profiles,
             channel_style=channel_style,
