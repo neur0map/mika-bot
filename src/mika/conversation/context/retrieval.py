@@ -1,13 +1,31 @@
-"""Bounded lexical retrieval with same-user and same-channel affinity."""
+"""Bounded legacy affinity and scoped relationship-memory retrieval."""
 
 from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Protocol
 
+from mika.conversation.context.contracts import MemoryCandidate
 from mika.conversation.contracts import ConversationEnvelope
+from mika.conversation.relationships.candidates import (
+    as_aware,
+    claim_candidates,
+    message_candidate,
+    profile_candidate,
+    scope_for_envelope,
+)
+from mika.conversation.relationships.contracts import RelationDecision
+from mika.conversation.relationships.relation import classify_relation
+from mika.conversation.relationships.rendering import TieredMemoryRenderer
+from mika.conversation.relationships.scoring import (
+    AttributedRecallFeedback,
+    HybridMemoryScorer,
+    SemanticScorer,
+)
+from mika.persistence.conversations.relationship_records import ClaimRecord, ProfileVersionRecord
 
 _TOKEN = re.compile(r"[a-z0-9']{3,}", re.I)
 _CANDIDATE_LIMIT = 80
@@ -30,6 +48,22 @@ class SocialMemorySource(Protocol):
     async def feedback_summary(self, channel_id: str, *, limit: int = 100) -> dict[str, int]: ...
 
 
+class RelationshipMemorySource(Protocol):
+    """Scoped persistence capabilities used by relationship retrieval."""
+
+    async def claims_for_user(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+        limit: int = 100,
+    ) -> Sequence[ClaimRecord]: ...
+
+    async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class MemoryRecall:
     """Compact prompt context plus privacy-safe counts for tracing."""
@@ -38,24 +72,83 @@ class MemoryRecall:
     fact_count: int = 0
     match_count: int = 0
     feedback_count: int = 0
+    relationship_retrieval: bool = False
+    candidate_ids: tuple[str, ...] = ()
+    selected_ids: tuple[str, ...] = ()
+    rejected_ids: tuple[str, ...] = ()
+    selected_tiers: dict[str, str] = field(default_factory=dict)
+    rejection_reasons: dict[str, str] = field(default_factory=dict)
+    estimated_token_cost: int = 0
+    latency_ms: float = 0.0
+    ranking_quality_signal: float = 0.0
 
     @property
     def trace_details(self) -> dict[str, object]:
-        return {
+        details: dict[str, object] = {
             "fact_count": self.fact_count,
             "match_count": self.match_count,
             "feedback_count": self.feedback_count,
         }
+        if self.relationship_retrieval:
+            details.update(
+                relationship_retrieval=True,
+                candidate_ids=self.candidate_ids,
+                selected_ids=self.selected_ids,
+                rejected_ids=self.rejected_ids,
+                selected_tiers=dict(self.selected_tiers),
+                rejection_reasons=dict(self.rejection_reasons),
+                estimated_token_cost=self.estimated_token_cost,
+                latency_ms=self.latency_ms,
+                ranking_quality_signal=self.ranking_quality_signal,
+            )
+        return details
 
 
 class AffinityRetriever:
     """Rank bounded candidates without an external vector service."""
 
-    def __init__(self, source: SocialMemorySource, *, match_limit: int = 4) -> None:
+    def __init__(
+        self,
+        source: SocialMemorySource,
+        *,
+        match_limit: int = 4,
+        relationship_source: RelationshipMemorySource | None = None,
+        relationship_candidates: Sequence[MemoryCandidate] = (),
+        semantic_scorer: SemanticScorer | None = None,
+        attributed_feedback: Sequence[AttributedRecallFeedback] = (),
+        relation_decision: RelationDecision | None = None,
+        token_budget: int = 700,
+        per_entry_token_cap: int = 180,
+        minimum_score: float = 0.8,
+    ) -> None:
         self._source = source
         self._match_limit = max(0, match_limit)
+        self._relationship_source = relationship_source
+        self._relationship_candidates = tuple(relationship_candidates)
+        self._semantic_scorer = semantic_scorer
+        self._attributed_feedback = tuple(attributed_feedback)
+        self._relation_decision = relation_decision
+        self._scorer = HybridMemoryScorer(minimum_score=minimum_score)
+        self._renderer = TieredMemoryRenderer(
+            token_budget=token_budget,
+            per_entry_token_cap=per_entry_token_cap,
+        )
 
     async def retrieve(self, envelope: ConversationEnvelope) -> MemoryRecall:
+        """Return legacy recall or the explicitly enabled scoped replacement."""
+        if self._relationship_source is not None:
+            started = perf_counter()
+            try:
+                return await self._retrieve_relationship(envelope)
+            except Exception:
+                return MemoryRecall(
+                    relationship_retrieval=True,
+                    rejection_reasons={"relationship_retrieval": "source_failure"},
+                    latency_ms=(perf_counter() - started) * 1000,
+                )
+        return await self._retrieve_legacy(envelope)
+
+    async def _retrieve_legacy(self, envelope: ConversationEnvelope) -> MemoryRecall:
         facts = await self._source.facts(envelope.author_id)
         candidates = await self._source.candidates(envelope.channel_id, envelope.author_id)
         feedback = await self._source.feedback_summary(envelope.channel_id)
@@ -92,6 +185,83 @@ class AffinityRetriever:
             sum(feedback.values()),
         )
 
+    async def _retrieve_relationship(self, envelope: ConversationEnvelope) -> MemoryRecall:
+        started = perf_counter()
+        scope = scope_for_envelope(envelope)
+        relationship_source = self._relationship_source
+        if relationship_source is None:
+            return MemoryRecall()
+        claims = await relationship_source.claims_for_user(
+            envelope.author_id,
+            visibility_kind=scope.visibility_kind,
+            guild_id=scope.guild_id,
+            channel_id=scope.channel_id,
+        )
+        profile = await relationship_source.active_profile(envelope.author_id)
+        messages = await self._source.candidates(envelope.channel_id, envelope.author_id)
+        candidates = [*claim_candidates(claims), *self._relationship_candidates]
+        if profile is not None and scope.visibility_kind == "direct_message":
+            candidates.append(profile_candidate(profile, scope))
+        candidates.extend(message_candidate(item, envelope, scope) for item in messages)
+        ranking = self._scorer.rank(
+            envelope.text,
+            candidates,
+            scope,
+            now=as_aware(envelope.created_at),
+            semantic_scorer=self._semantic_scorer,
+            feedback=self._attributed_feedback,
+        )
+        ranked, limit_rejections = _limit_messages(ranking.ranked, self._match_limit)
+        relation = self._relation_decision or classify_relation(envelope.text)
+        rendered = self._renderer.render(ranked, relation)
+        reasons = {
+            **ranking.rejection_reasons,
+            **limit_rejections,
+            **rendered.rejection_reasons,
+        }
+        selected = set(rendered.selected_ids)
+        candidate_ids = tuple(item.candidate_id for item in candidates)
+        rejected_ids = tuple(
+            candidate_id
+            for candidate_id in candidate_ids
+            if candidate_id in reasons and candidate_id not in selected
+        )
+        selected_candidates = {
+            item.candidate_id: item for item in ranked if item.candidate_id in selected
+        }
+        return MemoryRecall(
+            text=rendered.text,
+            fact_count=sum(item.kind == "claim" for item in selected_candidates.values()),
+            match_count=sum(item.kind == "message" for item in selected_candidates.values()),
+            feedback_count=len(self._attributed_feedback),
+            relationship_retrieval=True,
+            candidate_ids=candidate_ids,
+            selected_ids=rendered.selected_ids,
+            rejected_ids=rejected_ids,
+            selected_tiers=dict(rendered.selected_tiers),
+            rejection_reasons=reasons,
+            estimated_token_cost=rendered.estimated_token_cost,
+            latency_ms=(perf_counter() - started) * 1000,
+            ranking_quality_signal=ranking.ranking_quality_signal,
+        )
+
 
 def _terms(text: str) -> set[str]:
     return {match.group(0).casefold() for match in _TOKEN.finditer(text)}
+
+
+def _limit_messages(
+    candidates: Sequence[MemoryCandidate], limit: int
+) -> tuple[list[MemoryCandidate], dict[str, str]]:
+    selected: list[MemoryCandidate] = []
+    rejected: dict[str, str] = {}
+    message_count = 0
+    for candidate in candidates:
+        if candidate.kind != "message":
+            selected.append(candidate)
+        elif message_count < limit:
+            selected.append(candidate)
+            message_count += 1
+        else:
+            rejected[candidate.candidate_id] = "match_limit"
+    return selected, rejected

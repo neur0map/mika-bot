@@ -1,5 +1,5 @@
 # Relationship memory
 
-This package provides immutable, evidence-backed relationship-memory contracts and a deterministic
-classifier that preserves conversational continuity when a turn is ambiguous. It is platform-neutral
-and does not retrieve, persist, or generate conversation content.
+This package provides immutable relationship-memory contracts, deterministic relation
+classification, scoped candidate construction, inspectable hybrid scoring, and whole-tier budgeted
+rendering. It is platform-neutral and does not persist records or call model providers.

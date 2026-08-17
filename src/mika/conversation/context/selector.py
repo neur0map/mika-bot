@@ -52,6 +52,15 @@ class ContextSelector:
             fact_count=recall.fact_count,
             match_count=recall.match_count,
             feedback_count=recall.feedback_count,
+            relationship_retrieval=recall.relationship_retrieval,
+            candidate_ids=recall.candidate_ids,
+            selected_ids=recall.selected_ids,
+            rejected_ids=recall.rejected_ids,
+            selected_tiers=recall.selected_tiers,
+            rejection_reasons=recall.rejection_reasons,
+            estimated_token_cost=recall.estimated_token_cost,
+            latency_ms=recall.latency_ms,
+            ranking_quality_signal=recall.ranking_quality_signal,
         )
 
     async def _recall(self, envelope: ConversationEnvelope) -> MemoryRecall:
