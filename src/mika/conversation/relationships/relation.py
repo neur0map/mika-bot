@@ -75,6 +75,9 @@ def classify_relation(
     explicit = _explicit_relation(text)
     if explicit is not None:
         return explicit
+    topic_shift = _topic_shift_relation(text, previous_user_text, previous_assistant_text)
+    if topic_shift is not None:
+        return topic_shift
     referential = _referential_follow_up(text, replies_to_message)
     if referential is not None:
         return referential
@@ -113,6 +116,20 @@ def _referential_follow_up(text: str, replies_to_message: bool) -> RelationDecis
     return None
 
 
+def _topic_shift_relation(
+    text: str,
+    previous_user_text: str | None,
+    previous_assistant_text: str | None,
+) -> RelationDecision | None:
+    """Return an explicit topic shift before weaker reply structure is considered."""
+    if not _TOPIC_SHIFT_PATTERN.search(text):
+        return None
+    signals = ["topic_shift_phrase"]
+    if not _token_overlap(text, previous_user_text, previous_assistant_text):
+        signals.append("no_token_overlap")
+    return RelationDecision("new_topic", 0.9, "explicit topic change", tuple(signals))
+
+
 def _continuity_relation(
     text: str,
     previous_user_text: str | None,
@@ -121,11 +138,6 @@ def _continuity_relation(
 ) -> RelationDecision:
     """Use lexical overlap and elapsed time only after direct cues are absent."""
     overlap = _token_overlap(text, previous_user_text, previous_assistant_text)
-    if _TOPIC_SHIFT_PATTERN.search(text):
-        topic_signals = ["topic_shift_phrase"]
-        if not overlap:
-            topic_signals.append("no_token_overlap")
-        return RelationDecision("new_topic", 0.9, "explicit topic change", tuple(topic_signals))
     if overlap:
         return _decision("follow_up", 0.75, "shared conversation terms", "token_overlap")
     if elapsed_seconds >= _NEW_TOPIC_GAP_SECONDS:

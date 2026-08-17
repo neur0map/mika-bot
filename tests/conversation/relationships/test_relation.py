@@ -66,6 +66,20 @@ def test_explicit_unrelated_topic_starts_a_new_topic() -> None:
     assert {"topic_shift_phrase", "no_token_overlap"} <= set(decision.signals)
 
 
+def test_explicit_topic_shift_outranks_reply_reference() -> None:
+    """An explicit topic shift must override reply structure and reference wording."""
+    decision = classify_relation(
+        "New topic: what about sourdough?",
+        "Why is the PostgreSQL migration locking the table?",
+        "The lock is waiting for an active transaction.",
+        60,
+        replies_to_message=True,
+    )
+
+    assert decision.relation == "new_topic"
+    assert "topic_shift_phrase" in decision.signals
+
+
 def test_memory_probe_requests_evidence_context() -> None:
     """A request to recall a past exchange is a memory probe."""
     decision = classify_relation(
