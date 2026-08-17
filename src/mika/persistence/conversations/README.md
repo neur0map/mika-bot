@@ -1,4 +1,5 @@
-# Conversation diagnostics
+# Conversation persistence
 
-This package stores privacy-safe conversation turn traces. It depends on the shared
-SQLAlchemy base and the platform-neutral conversation trace contracts.
+This package stores privacy-safe conversation turn traces plus evidence-backed relationship claims,
+immutable profile and policy versions, archive cursors, and content-free recall attribution. The
+relationship-memory repository owns primitive DTOs and never depends on conversation-layer types.
