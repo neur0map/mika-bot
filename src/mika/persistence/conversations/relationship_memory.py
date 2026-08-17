@@ -370,8 +370,8 @@ class RelationshipMemoryRepository:
             None if archive is None else archive.source_name,
             None if archive is None else archive.discord_message_id,
             None if archive is None else archive.updated_at,
-             {"recall": {"recorded": recall_count}},
-         )
+            {"recall": {"recorded": recall_count}},
+        )
 
     async def advance_cursor(self, cursor: ArchiveCursor) -> None:
         """Advance one archive cursor without permitting regression."""

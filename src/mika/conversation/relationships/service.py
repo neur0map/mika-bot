@@ -447,6 +447,7 @@ class RelationshipMemoryService:
             profile_changed=None,
             policy_version_id=policy_version_id,
             phase_durations_ms=phases,
+        )
 
     def _emit_consolidation(
         self,
@@ -469,6 +470,7 @@ class RelationshipMemoryService:
             policy_version_id=run.policy_version_id,
             phase_durations_ms=phases,
         )
+
     def _emit_failure(
         self,
         operation: str,
