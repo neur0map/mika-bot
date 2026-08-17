@@ -34,6 +34,7 @@ from mika.persistence.conversations.relationship_models import (
     StoredProfileVersion,
     StoredRecallEvent,
 )
+from mika.persistence.conversations.relationship_records import ClaimWrite, EvidenceWrite
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
@@ -51,11 +52,19 @@ class Extractor:
         self.calls.append(observation.message_id)
         if observation.message_id == self.fail_message_id:
             raise RuntimeError("provider unavailable")
-        value = "Celeste" if relation.relation == "correction" else "Hades"
+        drink_correction = "chamomile" in observation.text.casefold()
+        value = (
+            "Chamomile"
+            if drink_correction
+            else "Celeste"
+            if relation.relation == "correction"
+            else "Hades"
+        )
+        key = " Preference:Drink " if drink_correction else "preference:game"
         return (
             EvidenceProposal(
                 "preference",
-                "preference:game",
+                key,
                 value,
                 "correction" if relation.relation == "correction" else "explicit",
                 0.98,
@@ -123,6 +132,48 @@ def envelope(message_id: str = "turn-2") -> ConversationEnvelope:
         "Do you remember my favorite game?",
         False,
         NOW + timedelta(minutes=2),
+    )
+
+
+def claim_write(
+    claim_id: str,
+    *,
+    key: str,
+    value: str,
+    evidence_class: str,
+    guild_id: str,
+    channel_id: str,
+    observed_at: datetime = NOW,
+) -> ClaimWrite:
+    return ClaimWrite(
+        claim_id,
+        "user-1",
+        "guild",
+        guild_id,
+        channel_id,
+        "preference",
+        key,
+        value,
+        evidence_class,
+        0.95,
+        "candidate",
+        None,
+        observed_at,
+    )
+
+
+def evidence_write(
+    source_id: str, *, guild_id: str, channel_id: str, observed_at: datetime = NOW
+) -> EvidenceWrite:
+    return EvidenceWrite(
+        "discord",
+        source_id,
+        source_id,
+        observed_at,
+        "guild",
+        guild_id,
+        channel_id,
+        "policy-1",
     )
 
 
@@ -285,6 +336,100 @@ async def test_consolidation_reads_candidate_history_and_is_profile_idempotent(
         assert first.policy_version_id == "policy-1"
         assert second.profile_changed is False
         assert count == 1
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_consolidation_does_not_share_evidence_between_same_key_claims(
+    tmp_path: Path,
+) -> None:
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        await store.add_evidence(
+            claim_write(
+                "explicit",
+                key="preference:drink",
+                value="tea",
+                evidence_class="explicit",
+                guild_id="guild-1",
+                channel_id="channel-1",
+            ),
+            evidence_write("source-explicit", guild_id="guild-1", channel_id="channel-1"),
+        )
+        await store.add_evidence(
+            claim_write(
+                "behavior",
+                key="preference:drink",
+                value="coffee",
+                evidence_class="repeated_behavior",
+                guild_id="guild-2",
+                channel_id="channel-2",
+            ),
+            evidence_write("source-behavior", guild_id="guild-2", channel_id="channel-2"),
+        )
+
+        await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+
+        explicit = await store.claim("explicit")
+        behavior = await store.claim("behavior")
+        assert explicit is not None and explicit.state == "active"
+        assert behavior is not None and behavior.state == "candidate"
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_correction_supersedes_only_matching_normalized_preference_key(
+    tmp_path: Path,
+) -> None:
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        drink = claim_write(
+            "drink",
+            key="preference:drink",
+            value="tea",
+            evidence_class="explicit",
+            guild_id="guild-1",
+            channel_id="channel-1",
+        )
+        game = claim_write(
+            "game",
+            key="preference:game",
+            value="Hades",
+            evidence_class="explicit",
+            guild_id="guild-1",
+            channel_id="channel-1",
+            observed_at=NOW + timedelta(minutes=1),
+        )
+        await store.add_evidence(
+            drink, evidence_write("source-drink", guild_id="guild-1", channel_id="channel-1")
+        )
+        await store.activate_claim("drink", confirmed_at=NOW)
+        await store.add_evidence(
+            game,
+            evidence_write(
+                "source-game",
+                guild_id="guild-1",
+                channel_id="channel-1",
+                observed_at=NOW + timedelta(minutes=1),
+            ),
+        )
+        await store.activate_claim("game", confirmed_at=NOW + timedelta(minutes=1))
+
+        await service.observe_turn(
+            observation("102", "Actually, I prefer chamomile instead of tea")
+        )
+        recalled = await service.recall(envelope("turn-after-correction"))
+
+        history = await store.claims_for_subject("user-1")
+        states = {(item.key, item.value): item.state for item in history}
+        assert states[("preference:drink", "tea")] == "superseded"
+        assert states[("preference:drink", "Chamomile")] == "active"
+        assert states[("preference:game", "Hades")] == "active"
+        assert set(recalled.text.split(" | ")) == {"Chamomile", "Hades"}
     finally:
         await store.close()
         await engine.dispose()

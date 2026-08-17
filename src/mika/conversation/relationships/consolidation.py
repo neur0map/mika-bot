@@ -41,11 +41,18 @@ class RelationshipConsolidator:
         claims: Sequence[RelationshipClaim],
         evidence_by_key: Mapping[str, Sequence[EvidenceProposal]] | None = None,
         *,
+        evidence_by_claim_id: Mapping[str, Sequence[EvidenceProposal]] | None = None,
         predecessor: RelationshipProfile | None = None,
         now: datetime,
     ) -> ConsolidationResult:
         """Return a promoted, merged, and predecessor-safe profile result."""
-        normalized = _normalize_claims(claims, evidence_by_key or {}, self._activation_policy, now)
+        normalized = _normalize_claims(
+            claims,
+            evidence_by_key or {},
+            evidence_by_claim_id,
+            self._activation_policy,
+            now,
+        )
         current = _supersede_predecessors(normalized)
         merged = _merge_duplicate_support(current)
         proposed = _profile_for_active_claims(current, predecessor, now)
@@ -55,12 +62,26 @@ class RelationshipConsolidator:
 def _normalize_claims(
     claims: Sequence[RelationshipClaim],
     evidence_by_key: Mapping[str, Sequence[EvidenceProposal]],
+    evidence_by_claim_id: Mapping[str, Sequence[EvidenceProposal]] | None,
     policy: ActivationPolicy,
     now: datetime,
 ) -> tuple[RelationshipClaim, ...]:
     normalized_evidence = _normalized_evidence(evidence_by_key)
+    exact_evidence = None
+    if evidence_by_claim_id is not None:
+        exact_evidence = {
+            claim_id: tuple(_normalize_evidence(item) for item in evidence)
+            for claim_id, evidence in evidence_by_claim_id.items()
+        }
     return tuple(
-        _normalize_claim(claim, normalized_evidence.get(_normalized(claim.key), ()), policy, now)
+        _normalize_claim(
+            claim,
+            exact_evidence.get(claim.claim_id, ())
+            if exact_evidence is not None
+            else normalized_evidence.get(_normalized(claim.key), ()),
+            policy,
+            now,
+        )
         for claim in claims
     )
 

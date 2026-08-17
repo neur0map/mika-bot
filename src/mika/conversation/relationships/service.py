@@ -35,10 +35,6 @@ from mika.persistence.conversations.relationship_records import (
     RelationshipMemoryPolicyVersionRecord,
 )
 
-_SERVICE_VERSION = "relationship-service-v1"
-_PROFILE_SCHEMA_VERSION = "relationship-profile-v1"
-_PROFILE_GENERATOR_VERSION = "deterministic-v1"
-
 
 @dataclass(frozen=True, slots=True)
 class ObservationInput:
@@ -222,7 +218,7 @@ class RelationshipMemoryService:
                 visibility_kind="guild" if envelope.guild_id else "direct_message",
                 guild_id=envelope.guild_id or None,
                 channel_id=envelope.channel_id,
-                query_hash=f"sha256:{_digest(envelope.text)}",
+                query_hash=f"sha256:{hashlib.sha256(envelope.text.encode()).hexdigest()}",
                 relation_label=relation.relation,
                 candidate_ids=recalled.candidate_ids,
                 selected_claim_ids=recalled.selected_ids,
@@ -230,7 +226,7 @@ class RelationshipMemoryService:
                 rejection_reasons=recalled.rejection_reasons,
                 estimated_token_cost=recalled.estimated_token_cost,
                 latency_ms=recalled.latency_ms,
-                retrieval_version=_SERVICE_VERSION,
+                retrieval_version="relationship-service-v1",
                 policy_version_id=policy.policy_version_id,
                 created_at=self._clock(),
             )
@@ -255,7 +251,7 @@ class RelationshipMemoryService:
         )
         result = self._consolidator.consolidate(
             tuple(_relationship_claim(item) for item in records),
-            _evidence_by_key(records, evidence),
+            evidence_by_claim_id=_evidence_by_claim(records, evidence),
             now=self._clock(),
         )
         await self._publish_activations(records, result)
@@ -312,12 +308,14 @@ class RelationshipMemoryService:
         history = tuple(await self._repository.claims_for_subject(observation.subject_user_id))
         claim_id = _claim_id(observation, proposal)
         existing = next((item for item in history if item.claim_id == claim_id), None)
-        predecessor = (
-            existing.predecessor_claim_id
-            if existing is not None
-            else _correction_predecessor(history, proposal, observation)
-        )
-        claim = _claim_write(claim_id, predecessor, observation, proposal)
+        predecessor = _correction_predecessor(history, proposal, observation)
+        if existing is not None:
+            predecessor_id, claim_key = existing.predecessor_claim_id, existing.key
+        elif predecessor is not None:
+            predecessor_id, claim_key = predecessor.claim_id, predecessor.key
+        else:
+            predecessor_id, claim_key = None, proposal.key
+        claim = _claim_write(claim_id, claim_key, predecessor_id, observation, proposal)
         evidence = _evidence_write(observation, policy.policy_version_id)
         stored = await self._repository.add_evidence(claim, evidence)
         all_evidence = tuple(await self._repository.evidence_for_claims([claim_id]))
@@ -365,8 +363,8 @@ class RelationshipMemoryService:
                 subject_user_id,
                 profile.index_text,
                 profile.overview_text,
-                _PROFILE_SCHEMA_VERSION,
-                _PROFILE_GENERATOR_VERSION,
+                "relationship-profile-v1",
+                "deterministic-v1",
                 policy_version_id,
                 self._clock(),
             )
@@ -378,6 +376,7 @@ class RelationshipMemoryService:
 
 def _claim_write(
     claim_id: str,
+    claim_key: str,
     predecessor_id: str | None,
     observation: ObservationInput,
     proposal: EvidenceProposal,
@@ -389,7 +388,7 @@ def _claim_write(
         observation.guild_id,
         observation.channel_id,
         proposal.kind,
-        proposal.key,
+        claim_key,
         proposal.value,
         proposal.evidence_class,
         proposal.confidence,
@@ -446,7 +445,7 @@ def _proposal_from_record(record: ClaimEvidenceRecord, claim: ClaimRecord) -> Ev
     )
 
 
-def _evidence_by_key(
+def _evidence_by_claim(
     claims: Sequence[ClaimRecord], evidence: Sequence[ClaimEvidenceRecord]
 ) -> Mapping[str, Sequence[EvidenceProposal]]:
     by_id = {item.claim_id: item for item in claims}
@@ -454,7 +453,7 @@ def _evidence_by_key(
     for item in evidence:
         claim = by_id.get(item.claim_id)
         if claim is not None:
-            grouped[claim.key].append(_proposal_from_record(item, claim))
+            grouped[item.claim_id].append(_proposal_from_record(item, claim))
     return grouped
 
 
@@ -462,20 +461,23 @@ def _correction_predecessor(
     claims: Sequence[ClaimRecord],
     proposal: EvidenceProposal,
     observation: ObservationInput,
-) -> str | None:
+) -> ClaimRecord | None:
     if proposal.evidence_class != "correction":
         return None
+    normalized_key = " ".join(proposal.key.casefold().split())
     candidates = [
         item
         for item in claims
         if item.state == "active"
+        and item.subject_user_id == observation.subject_user_id
         and item.kind == proposal.kind
+        and " ".join(item.key.casefold().split()) == normalized_key
         and item.value != proposal.value
         and item.visibility_kind == observation.visibility_kind
         and item.guild_id == observation.guild_id
         and item.channel_id == observation.channel_id
     ]
-    return max(candidates, key=lambda item: item.last_observed_at).claim_id if candidates else None
+    return max(candidates, key=lambda item: item.last_observed_at) if candidates else None
 
 
 def _claim_id(observation: ObservationInput, proposal: EvidenceProposal) -> str:
@@ -493,8 +495,5 @@ def _claim_id(observation: ObservationInput, proposal: EvidenceProposal) -> str:
 
 
 def _stable_id(prefix: str, *parts: str) -> str:
-    return f"{prefix}-{_digest(chr(0).join(parts))[:24]}"
-
-
-def _digest(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
+    digest = hashlib.sha256(chr(0).join(parts).encode()).hexdigest()
+    return f"{prefix}-{digest[:24]}"
