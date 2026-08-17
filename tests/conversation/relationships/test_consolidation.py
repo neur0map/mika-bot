@@ -309,3 +309,21 @@ def test_terminal_duplicate_predecessor_claim_is_removed_without_false_rollback(
     assert result.salvaged_claim_ids == ()
     assert result.profile is not None
     assert result.profile.interests[0].claim_ids == ("live",)
+
+
+def test_missing_duplicate_predecessor_claim_salvages_its_original_layer() -> None:
+    """Claim-granular rollback retains a missing duplicate without layer-lookup failure."""
+    consolidator = RelationshipConsolidator()
+    initial = consolidator.consolidate([claim("a"), claim("b")], now=BASE_TIME)
+    assert initial.profile is not None
+
+    result = consolidator.consolidate(
+        [claim("a")],
+        predecessor=initial.profile,
+        now=BASE_TIME + timedelta(days=1),
+    )
+
+    assert result.rejected is True
+    assert result.rollback_safe is True
+    assert result.profile is not None
+    assert [entry.claim_ids for entry in result.profile.interests] == [("a",), ("b",)]

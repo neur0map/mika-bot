@@ -49,3 +49,21 @@ Three new regression tests failed before the fix:
 Evidence proposals are normalized before activation, profile entry ordering now has deterministic
 secondary keys, and duplicate merge output retains every claim lifecycle state for claim-granular
 predecessor protection.
+
+## Fix Round 2
+
+### RED
+
+The duplicate-predecessor salvage regression failed with `StopIteration`, surfaced as
+`RuntimeError: generator raised StopIteration`, because a subset entry `(b,)` was compared to the
+predecessor's full `(a, b)` entry during layer lookup.
+
+### GREEN
+
+- `uv run pytest tests/conversation/relationships/test_consolidation.py -q` — 12 passed.
+- `uv run pytest tests/conversation/relationships -q` — 47 passed.
+- `make lint` — passed.
+- `make types` — passed.
+
+Protected missing claim IDs now carry their source layer through salvage, avoiding equality-based
+lookup against the full predecessor entry.

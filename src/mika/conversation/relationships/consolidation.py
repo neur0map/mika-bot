@@ -283,47 +283,38 @@ def _missing_protected_entries(
     proposed: RelationshipProfile | None,
     claims: Sequence[RelationshipClaim],
     predecessor: RelationshipProfile,
-) -> tuple[ProfileEntry, ...]:
+) -> tuple[tuple[str, ProfileEntry], ...]:
     visible = (
         {claim_id for entry in proposed.entries for claim_id in entry.claim_ids}
         if proposed
         else set()
     )
     states = {claim.claim_id: claim.state for claim in claims}
-    return tuple(
-        ProfileEntry(entry.key, entry.value, missing_ids)
-        for entry in predecessor.entries
-        if (
-            missing_ids := tuple(
+    missing: list[tuple[str, ProfileEntry]] = []
+    for layer, entries in _profile_layers(predecessor):
+        for entry in entries:
+            missing_ids = tuple(
                 claim_id
                 for claim_id in entry.claim_ids
                 if states.get(claim_id) not in _TERMINAL_STATES and claim_id not in visible
             )
-        )
-    )
+            if missing_ids:
+                missing.append((layer, ProfileEntry(entry.key, entry.value, missing_ids)))
+    return tuple(missing)
 
 
 def _salvage_profile(
     proposed: RelationshipProfile | None,
     predecessor: RelationshipProfile,
-    missing: Sequence[ProfileEntry],
+    missing: Sequence[tuple[str, ProfileEntry]],
 ) -> RelationshipProfile:
     current_entries = () if proposed is None else _layered_entries(proposed)
-    safe_entries = (*current_entries, *(_entry_layer(predecessor, entry) for entry in missing))
+    safe_entries = (*current_entries, *missing)
     return _profile_from_entries(predecessor.subject_user_id, predecessor.version + 1, safe_entries)
 
 
 def _layered_entries(profile: RelationshipProfile) -> tuple[tuple[str, ProfileEntry], ...]:
     return tuple((layer, entry) for layer, entries in _profile_layers(profile) for entry in entries)
-
-
-def _entry_layer(profile: RelationshipProfile, entry: ProfileEntry) -> tuple[str, ProfileEntry]:
-    return next(
-        (layer, item)
-        for layer, items in _profile_layers(profile)
-        for item in items
-        if item == entry
-    )
 
 
 def _profile_layers(
