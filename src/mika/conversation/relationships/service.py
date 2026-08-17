@@ -255,6 +255,19 @@ class RelationshipMemoryService:
             )
             raise
 
+    async def observe_archive_candidate(self, source: ArchiveSourceRecord) -> ObservationResult:
+        """Persist historical evidence as candidates for later consolidation."""
+        policy = await self._repository.active_policy_version()
+        if policy is None or not policy.relationship_learning_enabled:
+            policy_id = None if policy is None else policy.policy_version_id
+            return ObservationResult("disabled", policy_id)
+        observation = ObservationInput.from_archive(source)
+        relation = self._classify(observation)
+        proposals = tuple(await self._extractor.extract(observation, relation))
+        for proposal in proposals:
+            await self._persist_proposal(observation, proposal, policy, activate=False)
+        return ObservationResult("observed", policy.policy_version_id, len(proposals), 0)
+
     async def recall(self, envelope: ConversationEnvelope) -> MemoryRecall:
         """Retrieve scoped prompt memory and persist an idempotent content-free trace."""
         started = perf_counter()
@@ -511,6 +524,8 @@ class RelationshipMemoryService:
         observation: ObservationInput,
         proposal: EvidenceProposal,
         policy: RelationshipMemoryPolicyVersionRecord,
+        *,
+        activate: bool = True,
     ) -> int:
         history = tuple(await self._repository.claims_for_subject(observation.subject_user_id))
         claim_id = _claim_id(observation, proposal)
@@ -525,6 +540,8 @@ class RelationshipMemoryService:
         claim = _claim_write(claim_id, claim_key, predecessor_id, observation, proposal)
         evidence = _evidence_write(observation, policy.policy_version_id)
         stored = await self._repository.add_evidence(claim, evidence)
+        if not activate:
+            return 0
         all_evidence = tuple(await self._repository.evidence_for_claims([claim_id]))
         decision = self._activation_policy.evaluate(
             _relationship_claim(stored),

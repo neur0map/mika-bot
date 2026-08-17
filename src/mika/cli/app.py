@@ -15,6 +15,7 @@ from mika.cli.commands import update as update_cmd
 from mika.cli.commands import web as web_cmd
 from mika.cli.commands.honcho import app as honcho_app
 from mika.cli.commands.learning import app as learning_app
+from mika.cli.commands.relationship_memory import app as relationship_memory_app
 from mika.cli.commands.service import app as service_app
 from mika.cli.commands.userbot import app as userbot_app
 
@@ -36,6 +37,11 @@ app.add_typer(service_app, name="service", help="Install/control the systemd ser
 app.add_typer(honcho_app, name="honcho", help="Run the optional long-term memory service.")
 app.add_typer(userbot_app, name="userbot", help="Info on the personal companion (separate).")
 app.add_typer(learning_app, name="learning", help="The optional self-learning system.")
+app.add_typer(
+    relationship_memory_app,
+    name="relationship-memory",
+    help="Inspect and operate evidence-backed relationship memory.",
+)
 
 
 def main() -> None:

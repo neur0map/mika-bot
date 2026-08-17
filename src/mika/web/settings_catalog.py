@@ -36,6 +36,13 @@ CATALOG: tuple[Field, ...] = (
     Field("MIKA_TOOLS_WEB_SEARCH_ENABLED", "Web search", "AI", kind="bool"),
     Field("MIKA_MEMORY_RECENT_WINDOW", "Short-term memory (messages)", "Memory", kind="number"),
     Field(
+        "MIKA_SHARED_ARCHIVE_PATH",
+        "Discord archive database",
+        "Memory",
+        help="Read-only source used for resumable relationship-memory backfill.",
+        restart=True,
+    ),
+    Field(
         "MIKA_MEMORY_HONCHO_ENABLED",
         "Long-term memory (Honcho)",
         "Memory",

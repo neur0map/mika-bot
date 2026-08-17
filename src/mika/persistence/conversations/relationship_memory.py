@@ -7,7 +7,7 @@ import json
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +55,7 @@ from mika.persistence.conversations.relationship_records import (
     RecallEventWrite,
     RecallFeedbackWrite,
     RelationshipMemoryPolicyVersionRecord,
+    RelationshipMemoryStatus,
 )
 from mika.persistence.conversations.relationship_transitions import (
     activate_stored_claim,
@@ -331,6 +332,46 @@ class RelationshipMemoryRepository:
         else:
             stored.value = value
         await self._commit()
+
+    async def status(self) -> RelationshipMemoryStatus:
+        """Return content-free relationship-memory counts and checkpoint health."""
+        policy = await self.active_policy_version()
+        claim_count = int(
+            await self._session.scalar(select(func.count()).select_from(StoredClaim)) or 0
+        )
+        candidate_count = int(
+            await self._session.scalar(
+                select(func.count())
+                .select_from(StoredClaim)
+                .where(StoredClaim.state == "candidate")
+            )
+            or 0
+        )
+        profile_count = int(
+            await self._session.scalar(select(func.count()).select_from(StoredProfileHead)) or 0
+        )
+        recall_count = int(
+            await self._session.scalar(select(func.count()).select_from(StoredRecallEvent)) or 0
+        )
+        last_consolidation = await self._session.scalar(
+            select(func.max(StoredProfileVersion.created_at))
+        )
+        archive = await self._session.scalar(
+            select(StoredArchiveCursor).order_by(StoredArchiveCursor.updated_at.desc()).limit(1)
+        )
+        return RelationshipMemoryStatus(
+            claim_count,
+            candidate_count,
+            profile_count,
+            recall_count,
+            None if policy is None else policy.policy_version_id,
+            bool(policy and policy.relationship_learning_enabled),
+            last_consolidation,
+            None if archive is None else archive.source_name,
+            None if archive is None else archive.discord_message_id,
+            None if archive is None else archive.updated_at,
+             {"recall": {"recorded": recall_count}},
+         )
 
     async def advance_cursor(self, cursor: ArchiveCursor) -> None:
         """Advance one archive cursor without permitting regression."""

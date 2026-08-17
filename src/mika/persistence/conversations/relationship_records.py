@@ -184,3 +184,20 @@ class ArchiveSourceRecord:
     visibility_kind: str
     guild_id: str | None
     channel_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RelationshipMemoryStatus:
+    """Content-free aggregate state for operator health surfaces."""
+
+    claim_count: int
+    candidate_count: int
+    active_profile_count: int
+    recall_count: int
+    active_policy_version_id: str | None
+    learning_enabled: bool
+    last_consolidation_at: datetime | None
+    archive_source_name: str | None
+    archive_message_id: str | None
+    archive_updated_at: datetime | None
+    operation_health: Mapping[str, Mapping[str, int]]
