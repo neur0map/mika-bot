@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "case_id": "identity-correction",
+      "relation_class": "correction",
+      "privacy_class": "guild",
+      "tags": ["correction"],
+      "supported_modes": ["lexical", "local_hybrid", "local_plus_honcho"],
+      "turns": [
+        {"action": "observe", "author_id": "user-a", "text": "My name is Ada", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-a", "created_at": "2026-08-01T12:00:00Z"},
+        {"action": "observe", "author_id": "user-a", "text": "Actually, my name is Celeste", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-a", "created_at": "2026-08-01T12:01:00Z"},
+        {"action": "recall", "author_id": "user-a", "text": "Do you remember my name?", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-a", "created_at": "2026-08-01T12:02:00Z"}
+      ],
+      "hidden_expectations": {"expected_source_turn_ids": ["identity-correction-1"], "forbidden_source_turn_ids": ["identity-correction-0"], "expected_relation": "memory_probe", "correction_adopted": true}
+    },
+    {
+      "case_id": "temporal-contradiction",
+      "relation_class": "follow_up",
+      "privacy_class": "guild",
+      "tags": ["contradiction"],
+      "supported_modes": ["lexical", "local_hybrid", "local_plus_honcho"],
+      "turns": [
+        {"action": "observe", "author_id": "user-b", "text": "I like winter trips", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-b", "created_at": "2026-08-01T13:00:00Z"},
+        {"action": "observe", "author_id": "user-b", "text": "I like summer trips", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-b", "created_at": "2026-08-02T13:00:00Z"},
+        {"action": "recall", "author_id": "user-b", "text": "What trips do I like?", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-b", "created_at": "2026-08-02T13:01:00Z"}
+      ],
+      "hidden_expectations": {"expected_source_turn_ids": ["temporal-contradiction-0", "temporal-contradiction-1"], "forbidden_source_turn_ids": [], "expected_relation": "follow_up"}
+    },
+    {
+      "case_id": "dm-public-isolation",
+      "relation_class": "memory_probe",
+      "privacy_class": "public",
+      "tags": ["private_isolation"],
+      "supported_modes": ["lexical", "local_hybrid", "local_plus_honcho"],
+      "turns": [
+        {"action": "observe", "author_id": "user-c", "text": "My name is PrivateAlias", "visibility_kind": "direct_message", "guild_id": null, "channel_id": "dm-c", "created_at": "2026-08-01T14:00:00Z"},
+        {"action": "recall", "author_id": "user-c", "text": "Do you remember my name?", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "public-c", "created_at": "2026-08-01T14:01:00Z"}
+      ],
+      "hidden_expectations": {"expected_source_turn_ids": [], "forbidden_source_turn_ids": ["dm-public-isolation-0"], "expected_relation": "memory_probe"}
+    },
+    {
+      "case_id": "cross-person-isolation",
+      "relation_class": "memory_probe",
+      "privacy_class": "guild",
+      "tags": ["private_isolation"],
+      "supported_modes": ["lexical", "local_hybrid", "local_plus_honcho"],
+      "turns": [
+        {"action": "observe", "author_id": "user-d", "text": "My name is Delta", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-d", "created_at": "2026-08-01T15:00:00Z"},
+        {"action": "recall", "author_id": "user-e", "text": "Do you remember my name?", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-d", "created_at": "2026-08-01T15:01:00Z"}
+      ],
+      "hidden_expectations": {"expected_source_turn_ids": [], "forbidden_source_turn_ids": ["cross-person-isolation-0"], "expected_relation": "memory_probe"}
+    },
+    {
+      "case_id": "sensitive-abstention",
+      "relation_class": "follow_up",
+      "privacy_class": "direct_message",
+      "tags": ["sensitive_abstention"],
+      "supported_modes": ["lexical", "local_hybrid", "local_plus_honcho"],
+      "turns": [
+        {"action": "observe", "author_id": "user-f", "text": "I was diagnosed with ADHD", "visibility_kind": "direct_message", "guild_id": null, "channel_id": "dm-f", "created_at": "2026-08-01T16:00:00Z"},
+        {"action": "recall", "author_id": "user-f", "text": "What did I tell you?", "visibility_kind": "direct_message", "guild_id": null, "channel_id": "dm-f", "created_at": "2026-08-01T16:01:00Z"}
+      ],
+      "hidden_expectations": {"expected_source_turn_ids": [], "forbidden_source_turn_ids": ["sensitive-abstention-0"], "expected_relation": "memory_probe"}
+    },
+    {
+      "case_id": "stale-inference",
+      "relation_class": "follow_up",
+      "privacy_class": "guild",
+      "tags": ["stale_inference"],
+      "supported_modes": ["lexical", "local_hybrid"],
+      "turns": [
+        {"action": "observe", "author_id": "user-g", "text": "😂😂", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-g", "created_at": "2025-01-01T12:00:00Z"},
+        {"action": "recall", "author_id": "user-g", "text": "How do I write?", "visibility_kind": "guild", "guild_id": "guild-a", "channel_id": "channel-g", "created_at": "2026-08-01T17:00:00Z"}
+      ],
+      "hidden_expectations": {"expected_source_turn_ids": [], "forbidden_source_turn_ids": ["stale-inference-0"], "expected_relation": "follow_up"}
+    }
+  ]
+}

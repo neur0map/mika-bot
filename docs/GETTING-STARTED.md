@@ -39,3 +39,16 @@ Invite the bot with the `bot` scope and permissions appropriate for conversation
 - If Mika does not reply, verify the bot token, message-content intent, allowed guild/channel scope, and LLM provider configuration.
 - If media actions do not send, verify the configured media provider and Discord attachment permissions.
 - Use `mika web` for local operational status and `mika cleanup-commands --help` only when migrating an older installation with stale registered commands.
+
+## Verify relationship memory
+
+Run the deterministic held-out benchmark before enabling or deploying relationship-memory changes:
+
+```bash
+uv run python tools/run_relationship_memory_benchmark.py --mode all
+```
+
+The command always compares local hybrid recall with the lexical baseline. It requires zero
+cross-scope leakage, at least 95% correction adoption, at least 98% correct-person attribution,
+and local p95 retrieval below 100 ms. Content-free aggregate JSON and per-case JSONL are written
+under `var/benchmarks/`. The Honcho mode is included only when Honcho is configured.

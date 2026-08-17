@@ -48,3 +48,10 @@ Then set in your bot's `.env`: `MIKA_MEMORY_HONCHO_ENABLED=true` and
 - Honcho's memory engine needs its own LLM key; `mika honcho up` reuses your bot's
   key. If you use a non-OpenAI provider and see derivation errors, adjust the
   provider settings in `var/honcho/.env`.
+
+## Benchmark retrieval modes
+
+`uv run python tools/run_relationship_memory_benchmark.py --mode all` always evaluates lexical
+and local-hybrid relationship recall. It adds `local_plus_honcho` only when
+`MIKA_MEMORY_HONCHO_ENABLED=true`; requesting that mode directly while Honcho is disabled exits
+without running it. Benchmark artifacts contain no message text or hidden expected answers.

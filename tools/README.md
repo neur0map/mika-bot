@@ -23,6 +23,9 @@ Run one by hand:
 python tools/hooks/check_ai_comments.py path/to/file.py
 ```
 
+`run_relationship_memory_benchmark.py` replays the versioned held-out relationship fixture through
+an isolated temporary store and writes content-free aggregate JSON plus per-case JSONL.
+
 Thresholds (file size, comment ratio, comment-block length) live as constants at
 the top of each script. Adjust there if a rule is too strict for a real case;
 prefer the per-line `# allow-comment` escape hatch over loosening a global limit.

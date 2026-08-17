@@ -1,5 +1,17 @@
 # Mikav2 changelog
 
+## 2026-08-18 — Evidence-backed relationship-memory benchmark
+
+- Added chronological held-out replay through an isolated temporary SQLite relationship store.
+- Added cases for next-turn correction adoption, temporal contradictions, DM/public and
+  cross-person isolation, sensitive-data abstention, and stale behavioral inference.
+- Added content-free JSONL case artifacts and aggregate gates for recall regression, leakage,
+  correction adoption, attribution, relation classification, irrelevant rejection, prompt cost,
+  and retrieval latency.
+- In the verified six-case run, lexical and local-hybrid recall both reached 100% recall,
+  correction adoption, attribution, relation accuracy, and irrelevant rejection with zero scope
+  leaks. Lexical p95 was 34.70 ms and local-hybrid p95 was 53.79 ms; both passed the 100 ms gate.
+
 ## 2026-08-17 — Natural expression skill
 
 - Added aggregate server, channel, and bounded per-person writing profiles learned from the local
