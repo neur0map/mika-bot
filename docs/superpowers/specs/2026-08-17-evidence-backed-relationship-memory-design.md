@@ -206,15 +206,27 @@ Retrieval operates in explicit stages:
    evidence confidence, and correction priority.
 5. Apply diversity filtering so near-duplicates cannot consume the result set.
 6. Reject candidates below the minimum score.
-7. Render selected overviews within a strict token budget.
+7. Render selected representations within a strict token budget. Render qualifying corrections and
+   explicit facts first. For all other eligible candidates, allocate the cheapest safe representation
+   breadth-first before using remaining budget to deepen higher-ranked candidates. Each entry has a
+   per-entry cap; if its chosen representation does not fit, use a precomputed lower-detail
+   representation or reject it. Rendering never slices a claim or evidence excerpt mid-entry merely
+   to fit the budget.
 8. Record a privacy-safe recall trace.
 
 The default score is deterministic and inspectable. Optional embeddings add one bounded signal; they
 never replace scope, evidence confidence, or correction priority. Honcho remains an optional external
 source and is merged after local retrieval with ID and text deduplication.
 
-Recall traces record query hash, relation label, candidate IDs, selected IDs, rejection reasons,
-estimated token cost, latency, and retrieval version. They do not duplicate message content.
+Recall traces record query hash, relation label, candidate IDs, selected IDs, selected
+representation/tier, rejection or downgrade reasons, estimated token cost, latency, retrieval
+version, and effective relationship-memory policy version. They do not duplicate message content.
+
+Direct feedback may be linked to the exact recall event and the selected claim IDs through an
+idempotent feedback record. Recall feedback is separate from claim evidence: it must never alter a
+claim's value, evidence class, confidence, lifecycle state, or supersession chain. It produces only
+a bounded ranking-quality signal after at least three distinct feedback records; a direct correction
+still follows the correction flow below and creates correction evidence.
 
 ## Extraction and Consolidation
 
@@ -233,7 +245,9 @@ reported as degraded input rather than assigned an invented ordering.
 
 Deterministic extractors handle measurable expression features, explicit correction phrases,
 reaction feedback, and known fact forms. A provider-backed structured extractor may propose richer
-claims, but those begin as `candidate` evidence and must obey the same activation rules.
+claims, but those begin as `candidate` evidence and must obey the same activation rules. Every
+observation records the effective relationship-memory policy version used to decide whether and how
+it could write derived memory.
 
 A weekly consolidation job runs separately per person:
 
@@ -244,10 +258,15 @@ A weekly consolidation job runs separately per person:
 - decays unsupported behavioral inferences;
 - expires stale low-confidence claims;
 - rebuilds the compact relationship overview;
+- validates the proposed overview against its predecessor before activation: every active correction
+  and active explicit-fact claim remains represented unless that specific claim was superseded or
+  expired;
 - writes a new immutable profile version only when content changes.
 
 The previous versions remain available for rollback. A failed extraction or consolidation transaction
-leaves the last active profile untouched and retries with bounded backoff.
+or a lossy predecessor-validation result leaves the last active profile untouched and retries with
+bounded backoff. A rejected consolidation may salvage only newly validated entries; it never removes
+the protected predecessor anchors.
 
 ## Correction Flow
 
@@ -269,7 +288,10 @@ Corrections never rewrite raw messages or silently erase prior evidence.
 ## Privacy and Controls
 
 The operator can disable all relationship learning, semantic retrieval, provider-backed extraction,
-or the optional local relation model independently. Per-user deletion removes derived claims,
+or the optional local relation model independently. Every effective combination of those switches
+and relationship visibility rules is stored as an immutable, content-free relationship-memory policy
+version with creation time and change reason. Observation records, profile versions, and recall
+traces record that version. Per-user deletion removes derived claims,
 profiles, embeddings, and recall traces while preserving server archives according to their separate
 retention policy.
 
@@ -278,8 +300,17 @@ used in public channels unless it represents an explicit, non-sensitive user fac
 usable. Other users' profiles are never injected merely because they share a channel. Existing
 unscoped legacy facts do not bypass these checks.
 
-The dashboard and CLI show counts, versions, last consolidation time, failure status, and source IDs.
-They do not display private message text in aggregate operational views.
+The dashboard and CLI show counts, profile and policy versions, last consolidation time, failure
+status, and source IDs. They do not display private message text in aggregate operational views.
+
+## Telemetry
+
+Relationship observation, retrieval, and consolidation emit one content-free operation record each.
+It includes outcome, phase durations, candidate/selected/rejected counts, estimated tokens,
+fallback/retry reason, profile changed/no-op status, and the effective policy version. It may use
+hashed IDs for correlation but must not contain query text, message text, profile text, or raw claim
+values. Recall traces remain the per-operation audit record; aggregate telemetry supplies health and
+p95 measurements without duplicating their content.
 
 ## Licensing and Attribution
 
@@ -308,7 +339,9 @@ separately, with their notices, if a concrete component becomes necessary.
 ## Evaluation
 
 Unit and integration tests cover scoping, activation thresholds, contradiction preservation,
-correction precedence, version rollback, cursor idempotency, timeout fallbacks, token budgeting,
+correction precedence, version rollback, cursor idempotency, timeout fallbacks, breadth-first token
+budgeting and downgrade-not-truncate rendering, feedback-to-recall attribution without claim-truth
+mutation, consolidation predecessor preservation, policy-version attribution, content-free telemetry,
 deduplication, and deletion.
 
 The memory benchmark uses held-out, stateful multi-turn conversations. It replays every turn in
@@ -331,6 +364,12 @@ cursor behavior without exposing expected answers to generation. It measures:
 The benchmark compares lexical-only, local hybrid, and local-plus-Honcho configurations. Semantic or
 model-assisted stages ship enabled only when they improve held-out accuracy without violating the
 latency and leakage gates.
+
+The checked-in benchmark manifest assigns each case a stable ID, relation class, privacy class,
+expected claim IDs or labels, and supported retrieval modes. Each run writes safe per-case JSONL
+artifacts plus aggregate results, grouped by relation, correction, privacy, and retrieval mode.
+Artifacts contain IDs, decisions, scores, timings, and metrics only; they never contain source text,
+hidden expectations, or rendered prompt context.
 
 ## Rollout
 
