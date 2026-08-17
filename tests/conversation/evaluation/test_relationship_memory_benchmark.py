@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from mika.conversation.evaluation.relationship_memory import (
     run_relationship_benchmark,
     write_case_artifacts,
 )
+from mika.conversation.evaluation.relationship_memory_backend import LocalBenchmarkBackend
 from mika.conversation.relationships.contracts import RelationDecision
 from mika.conversation.relationships.service import ObservationInput
 
@@ -70,6 +72,12 @@ class RecordingBackend(RelationshipBenchmarkBackend):
     async def source_ids_for_candidates(self, candidate_ids: tuple[str, ...]) -> tuple[str, ...]:
         return candidate_ids
 
+    async def consolidate(self, observation: ObservationInput) -> None:
+        self.events.append(("consolidate", observation.message_id))
+
+    async def seed_inference(self, observation: ObservationInput) -> None:
+        self.events.append(("seed_inference", observation.message_id))
+
 
 def test_manifest_contains_required_held_out_behaviors() -> None:
     cases = load_relationship_cases(FIXTURE)
@@ -81,8 +89,12 @@ def test_manifest_contains_required_held_out_behaviors() -> None:
         "private_isolation",
         "sensitive_abstention",
         "stale_inference",
+        "behavioral_activation",
     } <= tags
     assert all(case.case_id and case.turns and case.supported_modes for case in cases)
+    stale = next(case for case in cases if "stale_inference" in case.tags)
+    assert sum(turn.action == "seed_inference" for turn in stale.turns) == 1
+    assert sum(turn.action == "consolidate" for turn in stale.turns) == 2
 
 
 @pytest.mark.asyncio
@@ -122,6 +134,7 @@ async def test_aggregate_gates_and_artifacts_are_content_free(tmp_path: Path) ->
         "candidate_count",
         "selected_count",
         "latency_ms",
+        "local_component_latency_ms",
         "metrics",
         "passed",
     }
@@ -204,5 +217,77 @@ async def test_configured_honcho_mode_calls_external_recall_without_artifact_con
     write_case_artifacts(report, artifact)
 
     assert queries
-    assert report.metrics.passed
+    assert not report.metrics.passed
+    assert not report.metrics.rollout_eligible
+    assert report.metrics.cross_scope_leakage is None
     assert "external-private-context" not in artifact.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_empty_retriever_cannot_pass_absolute_or_attribution_gates() -> None:
+    backend = RecordingBackend()
+    backend.active.clear()
+    case = load_relationship_cases(FIXTURE)[0]
+    case = type(case)(
+        case.case_id,
+        case.relation_class,
+        case.privacy_class,
+        case.tags,
+        case.supported_modes,
+        (case.turns[-1],),
+        case.hidden,
+    )
+
+    report = await run_relationship_benchmark((case,), BenchmarkMode.LEXICAL, backend)
+
+    assert not report.metrics.passed
+    assert report.metrics.recall_quality == 0.0
+    assert report.metrics.correct_person_attribution == 0.0
+    assert not report.metrics.no_recall_regression
+
+
+@pytest.mark.asyncio
+async def test_p95_uses_measured_wall_clock_not_reported_component_latency() -> None:
+    class SlowBackend(RecordingBackend):
+        async def recall(self, observation: ObservationInput) -> MemoryRecall:
+            await asyncio.sleep(0.11)
+            return MemoryRecall(latency_ms=0.01, relationship_retrieval=True)
+
+    case = load_relationship_cases(FIXTURE)[2]
+    report = await run_relationship_benchmark((case,), BenchmarkMode.LEXICAL, SlowBackend())
+
+    assert report.results[0].local_component_latency_ms == 0.01
+    assert report.metrics.p95_local_latency_ms >= 100
+    assert not report.metrics.passed
+
+
+@pytest.mark.asyncio
+async def test_stale_candidate_inference_expires_through_real_consolidation(
+    tmp_path: Path,
+) -> None:
+    backend = await LocalBenchmarkBackend.create(tmp_path / "lifecycle.db", "lexical")
+    stale = next(
+        case for case in load_relationship_cases(FIXTURE) if "stale_inference" in case.tags
+    )
+    try:
+        await run_relationship_benchmark((stale,), BenchmarkMode.LEXICAL, backend)
+    finally:
+        await backend.close()
+
+    assert backend.lifecycle_snapshots[0]["candidate"] == 1
+    assert backend.lifecycle_snapshots[1]["expired"] == 1
+
+
+@pytest.mark.asyncio
+async def test_repeated_behavior_fixture_activates_after_real_threshold(tmp_path: Path) -> None:
+    backend = await LocalBenchmarkBackend.create(tmp_path / "behavior.db", "lexical")
+    case = next(
+        case for case in load_relationship_cases(FIXTURE) if "behavioral_activation" in case.tags
+    )
+    try:
+        report = await run_relationship_benchmark((case,), BenchmarkMode.LEXICAL, backend)
+    finally:
+        await backend.close()
+
+    assert backend.lifecycle_snapshots[0]["active"] == 1
+    assert report.results[0].metrics["recall_hit"] is True

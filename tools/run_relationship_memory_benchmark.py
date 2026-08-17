@@ -98,7 +98,8 @@ def main() -> int:
         return 2
     payload: object = reports[0] if len(reports) == 1 else reports
     sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
-    return 0 if all(bool(report["passed"]) for report in reports) else 1
+    eligible = [report for report in reports if report["metrics"]["rollout_eligible"]]
+    return 0 if all(bool(report["passed"]) for report in eligible) else 1
 
 
 if __name__ == "__main__":

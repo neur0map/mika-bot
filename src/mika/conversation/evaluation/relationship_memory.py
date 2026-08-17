@@ -20,6 +20,9 @@ from mika.conversation.relationships.service import ObservationInput
 _CORRECTION_GATE = 0.95
 _ATTRIBUTION_GATE = 0.98
 _LOCAL_P95_GATE_MS = 100.0
+_RECALL_GATE = 0.95
+_RELATION_GATE = 0.95
+_IRRELEVANT_REJECTION_GATE = 0.95
 
 
 class BenchmarkMode(StrEnum):
@@ -40,6 +43,10 @@ class RelationshipBenchmarkBackend(Protocol):
     def classify(self, observation: ObservationInput) -> RelationDecision: ...
 
     async def source_ids_for_candidates(self, candidate_ids: Sequence[str]) -> tuple[str, ...]: ...
+
+    async def consolidate(self, observation: ObservationInput) -> None: ...
+
+    async def seed_inference(self, observation: ObservationInput) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +98,7 @@ class RelationshipCaseResult:
     candidate_count: int
     selected_count: int
     latency_ms: float
+    local_component_latency_ms: float
     metrics: Mapping[str, float | int | bool]
     passed: bool
     expected_claim_labels: tuple[str, ...] = ()
@@ -101,7 +109,7 @@ class RelationshipBenchmarkMetrics:
     """Aggregate rollout gates for one retrieval mode."""
 
     recall_quality: float
-    cross_scope_leakage: int
+    cross_scope_leakage: int | None
     correction_adoption: float
     correct_person_attribution: float
     relation_accuracy: float
@@ -109,15 +117,20 @@ class RelationshipBenchmarkMetrics:
     p95_local_latency_ms: float
     mean_prompt_tokens: float
     no_recall_regression: bool
+    rollout_eligible: bool
 
     @property
     def passed(self) -> bool:
         """Return whether every mandatory rollout threshold passes."""
         return (
-            self.no_recall_regression
+            self.rollout_eligible
+            and self.no_recall_regression
+            and self.recall_quality >= _RECALL_GATE
             and self.cross_scope_leakage == 0
             and self.correction_adoption >= _CORRECTION_GATE
             and self.correct_person_attribution >= _ATTRIBUTION_GATE
+            and self.relation_accuracy >= _RELATION_GATE
+            and self.irrelevant_rejection >= _IRRELEVANT_REJECTION_GATE
             and self.p95_local_latency_ms < _LOCAL_P95_GATE_MS
         )
 
@@ -153,21 +166,29 @@ async def run_relationship_benchmark(
         if mode not in case.supported_modes:
             continue
         recall = MemoryRecall(relationship_retrieval=True)
+        wall_clock_ms = 0.0
         relation: RelationKind = "follow_up"
         for position, turn in enumerate(case.turns):
             observation = _observation(case.case_id, position, turn)
             if turn.action == "observe":
                 await backend.observe(observation)
                 continue
+            if turn.action == "consolidate":
+                await backend.consolidate(observation)
+                continue
+            if turn.action == "seed_inference":
+                await backend.seed_inference(observation)
+                continue
             started = perf_counter()
             recall = await backend.recall(observation)
             measured_ms = (perf_counter() - started) * 1000
+            wall_clock_ms = measured_ms
             relation = backend.classify(observation).relation
             recall = _with_measured_latency(recall, measured_ms)
         token_costs.append(recall.estimated_token_cost)
         source_ids = await backend.source_ids_for_candidates(recall.selected_ids)
-        results.append(_score_case(case, mode, recall, relation, source_ids))
-    metrics = _aggregate(results, token_costs, baseline_recall_quality)
+        results.append(_score_case(case, mode, recall, relation, source_ids, wall_clock_ms))
+    metrics = _aggregate(results, token_costs, baseline_recall_quality, mode)
     return RelationshipBenchmarkReport(mode, tuple(results), metrics)
 
 
@@ -219,6 +240,7 @@ def report_values(report: RelationshipBenchmarkReport) -> dict[str, object]:
             "p95_local_latency_ms": metrics.p95_local_latency_ms,
             "mean_prompt_tokens": metrics.mean_prompt_tokens,
             "no_recall_regression": metrics.no_recall_regression,
+            "rollout_eligible": metrics.rollout_eligible,
         },
     }
 
@@ -282,13 +304,14 @@ def _score_case(
     recall: MemoryRecall,
     relation: RelationKind,
     selected_source_ids: Sequence[str],
+    wall_clock_ms: float,
 ) -> RelationshipCaseResult:
     selected = set(selected_source_ids)
     expected = set(case.hidden.expected_source_turn_ids)
     forbidden = set(case.hidden.forbidden_source_turn_ids)
     recall_hit = expected <= selected
     leakage = len(selected & forbidden)
-    attribution = not selected or selected <= expected
+    attribution = selected <= expected and (not expected or bool(selected))
     irrelevant_rejected = bool(expected) or not selected
     correction = not case.hidden.correction_adopted or (recall_hit and leakage == 0)
     relation_correct = relation == case.hidden.expected_relation
@@ -310,6 +333,7 @@ def _score_case(
         recall.rejected_ids,
         len(recall.candidate_ids),
         len(recall.selected_ids),
+        round(wall_clock_ms, 4),
         round(recall.latency_ms, 4),
         metrics,
         all(bool(value) for key, value in metrics.items() if key != "leakage_count")
@@ -321,10 +345,11 @@ def _aggregate(
     results: Sequence[RelationshipCaseResult],
     token_costs: Sequence[int],
     baseline: float | None,
+    mode: BenchmarkMode,
 ) -> RelationshipBenchmarkMetrics:
     total = len(results)
     if total == 0:
-        return RelationshipBenchmarkMetrics(0, 0, 0, 0, 0, 0, 0, 0, False)
+        return RelationshipBenchmarkMetrics(0, 0, 0, 0, 0, 0, 0, 0, False, False)
     correction_results = [item for item in results if item.relation_class == "correction"]
     expected_cases = [item for item in results if bool(item.metrics["recall_expected"])]
     recall_results = [item for item in expected_cases if bool(item.metrics["recall_hit"])]
@@ -334,16 +359,24 @@ def _aggregate(
     relation_accuracy = _rate(results, "relation_correct")
     irrelevant = _rate(results, "irrelevant_rejected")
     latency = _percentile([item.latency_ms for item in results], 0.95)
+    rollout_eligible = mode is not BenchmarkMode.LOCAL_PLUS_HONCHO
+    leakage = sum(int(item.metrics["leakage_count"]) for item in results)
+    no_regression = (
+        recall_quality >= _RECALL_GATE
+        if baseline is None
+        else baseline > 0 and recall_quality >= baseline
+    )
     return RelationshipBenchmarkMetrics(
         round(recall_quality, 4),
-        sum(int(item.metrics["leakage_count"]) for item in results),
+        leakage if rollout_eligible else None,
         round(correction_adoption, 4),
         round(attribution, 4),
         round(relation_accuracy, 4),
         round(irrelevant, 4),
         round(latency, 4),
         round(sum(token_costs) / total, 4),
-        baseline is None or recall_quality >= baseline,
+        no_regression,
+        rollout_eligible,
     )
 
 
@@ -372,6 +405,7 @@ def _artifact(result: RelationshipCaseResult) -> dict[str, object]:
         "candidate_count": result.candidate_count,
         "selected_count": result.selected_count,
         "latency_ms": result.latency_ms,
+        "local_component_latency_ms": result.local_component_latency_ms,
         "metrics": dict(result.metrics),
         "passed": result.passed,
     }

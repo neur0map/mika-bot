@@ -24,6 +24,8 @@ from mika.conversation.relationships.service import ObservationInput, Relationsh
 from mika.persistence.base import Base
 from mika.persistence.conversations.relationship_memory import RelationshipMemoryRepository
 from mika.persistence.conversations.relationship_records import (
+    ClaimWrite,
+    EvidenceWrite,
     RelationshipMemoryPolicyVersionRecord,
 )
 
@@ -67,6 +69,14 @@ class _LocalSemanticScorer:
         return tuple(_jaccard(query_terms, _terms(document)) for document in documents)
 
 
+class _MutableClock:
+    def __init__(self) -> None:
+        self.now = datetime(2026, 8, 1, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
 class LocalBenchmarkBackend:
     """Run the actual service and retriever with no external provider dependency."""
 
@@ -77,13 +87,18 @@ class LocalBenchmarkBackend:
         repository: RelationshipMemoryRepository,
         service: RelationshipMemoryService,
         external_recall: Callable[[str], Awaitable[str]] | None,
+        clock: _MutableClock,
+        policy_version_id: str,
     ) -> None:
         self._engine = engine
         self._session = session
         self._repository = repository
         self._service = service
         self._external_recall = external_recall
+        self._clock = clock
+        self._policy_version_id = policy_version_id
         self._subjects: set[str] = set()
+        self.lifecycle_snapshots: list[dict[str, int]] = []
 
     @classmethod
     async def create(
@@ -107,6 +122,7 @@ class LocalBenchmarkBackend:
             relationship_source=repository,
             semantic_scorer=semantic,
         )
+        clock = _MutableClock()
         service = RelationshipMemoryService(
             repository=repository,
             extractor=_DeterministicExtractor(),
@@ -114,15 +130,19 @@ class LocalBenchmarkBackend:
             classifier=_Classifier(),
             retriever=retriever,
             consolidator=RelationshipConsolidator(),
-            clock=lambda: datetime(2026, 8, 2, tzinfo=UTC),
+            clock=clock,
         )
-        return cls(engine, session, repository, service, external_recall)
+        return cls(
+            engine, session, repository, service, external_recall, clock, f"benchmark-policy-{mode}"
+        )
 
     async def observe(self, observation: ObservationInput) -> None:
+        self._clock.now = observation.created_at
         self._subjects.add(observation.subject_user_id)
         await self._service.observe_turn(observation)
 
     async def recall(self, observation: ObservationInput) -> MemoryRecall:
+        self._clock.now = observation.created_at
         self._subjects.add(observation.subject_user_id)
         recall = await self._service.recall(_envelope(observation))
         if self._external_recall is None:
@@ -132,6 +152,53 @@ class LocalBenchmarkBackend:
             recall,
             text=merge_memory_text(recall.text, external),
             estimated_token_cost=recall.estimated_token_cost + len(external.split()),
+        )
+
+    async def consolidate(self, observation: ObservationInput) -> None:
+        self._clock.now = observation.created_at
+        await self._service.consolidate_user(
+            observation.subject_user_id,
+            visibility_kind=observation.visibility_kind,
+            guild_id=observation.guild_id,
+            channel_id=observation.channel_id,
+        )
+        claims = await self._repository.claims_for_subject(observation.subject_user_id)
+        self.lifecycle_snapshots.append(
+            {
+                state: sum(claim.state == state for claim in claims)
+                for state in ("candidate", "active", "expired", "superseded", "disputed")
+            }
+        )
+
+    async def seed_inference(self, observation: ObservationInput) -> None:
+        self._clock.now = observation.created_at
+        self._subjects.add(observation.subject_user_id)
+        await self._repository.add_evidence(
+            ClaimWrite(
+                claim_id=f"benchmark-inference-{observation.message_id}",
+                subject_user_id=observation.subject_user_id,
+                visibility_kind=observation.visibility_kind,
+                guild_id=observation.guild_id,
+                channel_id=observation.channel_id,
+                kind="care_pattern",
+                key="inference:reply_tone",
+                value="quiet",
+                evidence_class="inference",
+                confidence=0.5,
+                state="candidate",
+                predecessor_claim_id=None,
+                observed_at=observation.created_at,
+            ),
+            EvidenceWrite(
+                source_kind=observation.source_kind,
+                source_id=observation.source_id,
+                source_message_id=observation.message_id,
+                source_timestamp=observation.created_at,
+                visibility_kind=observation.visibility_kind,
+                guild_id=observation.guild_id,
+                channel_id=observation.channel_id,
+                policy_version_id=self._policy_version_id,
+            ),
         )
 
     def classify(self, observation: ObservationInput) -> RelationDecision:

@@ -54,4 +54,6 @@ Then set in your bot's `.env`: `MIKA_MEMORY_HONCHO_ENABLED=true` and
 `uv run python tools/run_relationship_memory_benchmark.py --mode all` always evaluates lexical
 and local-hybrid relationship recall. It adds `local_plus_honcho` only when
 `MIKA_MEMORY_HONCHO_ENABLED=true`; requesting that mode directly while Honcho is disabled exits
-without running it. Benchmark artifacts contain no message text or hidden expected answers.
+without running it. Because the current response lacks source-scope metadata, this mode is
+informational and cannot pass rollout or claim zero leakage. Benchmark artifacts contain no
+message text or hidden expected answers.

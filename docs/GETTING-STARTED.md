@@ -50,5 +50,5 @@ uv run python tools/run_relationship_memory_benchmark.py --mode all
 
 The command always compares local hybrid recall with the lexical baseline. It requires zero
 cross-scope leakage, at least 95% correction adoption, at least 98% correct-person attribution,
-and local p95 retrieval below 100 ms. Content-free aggregate JSON and per-case JSONL are written
+and measured wall-clock local p95 retrieval below 100 ms. Content-free aggregate JSON and per-case JSONL are written
 under `var/benchmarks/`. The Honcho mode is included only when Honcho is configured.
