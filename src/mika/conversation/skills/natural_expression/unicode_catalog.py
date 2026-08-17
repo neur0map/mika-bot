@@ -26,12 +26,8 @@ _CATALOG: dict[str, tuple[EmojiProfile, ...]] = {
         EmojiProfile("🤨", "skepticism", "playful disbelief", 0.75),
         EmojiProfile("👀", "skepticism", "watching with interest", 0.7),
     ),
-    "awkwardness": (
-        EmojiProfile("😬", "awkwardness", "awkward tension", 0.78),
-    ),
-    "sadness": (
-        EmojiProfile("😔", "sadness", "quiet sadness", 0.72),
-    ),
+    "awkwardness": (EmojiProfile("😬", "awkwardness", "awkward tension", 0.78),),
+    "sadness": (EmojiProfile("😔", "sadness", "quiet sadness", 0.72),),
     "agreement": (
         EmojiProfile("👍", "agreement", "simple agreement", 0.78, placement="reaction"),
         EmojiProfile("✅", "agreement", "clear confirmation", 0.78, placement="reaction"),

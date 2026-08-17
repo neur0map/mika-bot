@@ -67,15 +67,18 @@ class ExpressionGuidance:
     avoid_dash: bool = False
     avoid_openings: tuple[str, ...] = ()
     allow_repeat_override: bool = False
+    target_words: int = 5
 
     def render(self) -> str:
         """Render only the evidence the generator needs for this turn."""
         mode = self.situation.emoji_mode
-        lines = [f"Expression: emoji {mode}; no emoji is the default."]
+        lines = [
+            f"Natural server style: aim for about {self.target_words} words in one sentence. "
+            f"Emoji {mode}; no emoji is the default."
+        ]
         if self.candidates:
             choices = ", ".join(
-                f"{item.profile.value} ({item.profile.description})"
-                for item in self.candidates
+                f"{item.profile.value} ({item.profile.description})" for item in self.candidates
             )
             lines.append(f"Contextually suitable choices: {choices}.")
         avoid: list[str] = []

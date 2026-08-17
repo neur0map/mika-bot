@@ -33,10 +33,7 @@ def assess_situation(
     families = _FAMILIES.get(intent, ())
     if not families:
         return SocialSituation(intent, normalized, "avoid")
-    energetic = (
-        intent in {"joke", "hype", "media_reaction"}
-        and normalized >= _ENERGETIC_CONFIDENCE
-    )
+    energetic = intent in {"joke", "hype", "media_reaction"} and normalized >= _ENERGETIC_CONFIDENCE
     mode = "encouraged" if energetic and mentioned else "optional"
     intensity = 0.8 if energetic else 0.45
     return SocialSituation(intent, normalized, mode, families, intensity)
