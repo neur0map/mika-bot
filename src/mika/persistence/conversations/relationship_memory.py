@@ -12,9 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mika.persistence.conversations.relationship_integrity import (
     normalize_discord_message_id,
-    validate_activation,
     validate_claim_evidence_scope,
-    validate_replacement,
 )
 from mika.persistence.conversations.relationship_mapping import (
     as_utc,
@@ -51,6 +49,11 @@ from mika.persistence.conversations.relationship_records import (
     RecallFeedbackWrite,
     RelationshipMemoryPolicyVersionRecord,
 )
+from mika.persistence.conversations.relationship_transitions import (
+    activate_stored_claim,
+    transition_replacement,
+    validate_new_predecessor,
+)
 from mika.persistence.conversations.social_models import UserFact
 
 
@@ -78,6 +81,7 @@ class RelationshipMemoryRepository:
             raise
         stored = await self._session.get(StoredClaim, claim.claim_id)
         if stored is None:
+            await validate_new_predecessor(self._session, claim)
             stored = stored_claim(claim)
             self._session.add(stored)
             await self._session.flush()
@@ -99,13 +103,7 @@ class RelationshipMemoryRepository:
     async def activate_claim(self, claim_id: str, *, confirmed_at: datetime) -> ClaimRecord:
         """Activate an existing claim and record its confirmation time."""
         stored = await self._require_claim(claim_id)
-        try:
-            validate_activation(stored.state)
-        except ValueError:
-            await self._session.rollback()
-            raise
-        stored.state = "active"
-        stored.last_confirmed_at = as_utc(confirmed_at)
+        stored = await activate_stored_claim(self._session, stored, confirmed_at=confirmed_at)
         await self._commit()
         return await claim_record(self._session, stored)
 
@@ -122,13 +120,9 @@ class RelationshipMemoryRepository:
         if await self._session.get(StoredClaim, replacement.claim_id) is not None:
             await self._session.rollback()
             raise ValueError("replacement claim already exists")
-        try:
-            validate_replacement(previous, replacement, evidence)
-        except ValueError:
-            await self._session.rollback()
-            raise
-        previous.state = "superseded"
-        previous.last_observed_at = max(previous.last_observed_at, as_utc(superseded_at))
+        await transition_replacement(
+            self._session, previous, replacement, evidence, superseded_at=superseded_at
+        )
         stored = stored_claim(replacement)
         stored.state = "active"
         stored.last_confirmed_at = as_utc(superseded_at)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 _MAX_SNOWFLAKE = "18446744073709551615"
-_CURRENT_CLAIM_STATES = {"active", "candidate", "disputed"}
+CURRENT_CLAIM_STATES = ("active", "candidate", "disputed")
 
 
 class ScopedRecord(Protocol):
@@ -54,8 +54,28 @@ def validate_claim_evidence_scope(claim: ScopedRecord, evidence: ScopedRecord) -
 
 def validate_activation(state: str) -> None:
     """Reject activation from a terminal lifecycle state."""
-    if state not in _CURRENT_CLAIM_STATES:
+    if state not in CURRENT_CLAIM_STATES:
         raise ValueError(f"cannot activate claim in {state} state")
+
+
+def validate_predecessor(previous: ScopedClaim, replacement: ScopedClaim) -> None:
+    """Reject a replacement that is unrelated, wider, or no longer current."""
+    validate_predecessor_identity_scope(previous, replacement)
+    if previous.state not in CURRENT_CLAIM_STATES:
+        raise ValueError("predecessor is not current")
+
+
+def validate_predecessor_identity_scope(previous: ScopedClaim, replacement: ScopedClaim) -> None:
+    """Require a replacement to preserve its predecessor's identity and visibility."""
+    if replacement.predecessor_claim_id != previous.claim_id:
+        raise ValueError("replacement predecessor does not match superseded claim")
+    if (replacement.subject_user_id, replacement.key) != (
+        previous.subject_user_id,
+        previous.key,
+    ):
+        raise ValueError("replacement subject and key must match")
+    if not _scope_contains(previous, replacement):
+        raise ValueError("replacement cannot widen predecessor scope")
 
 
 def validate_replacement(
@@ -64,17 +84,7 @@ def validate_replacement(
     evidence: ScopedRecord,
 ) -> None:
     """Validate a correction before changing either claim in its transaction."""
-    if replacement.predecessor_claim_id != previous.claim_id:
-        raise ValueError("replacement predecessor does not match superseded claim")
-    if previous.state not in _CURRENT_CLAIM_STATES:
-        raise ValueError("predecessor is not current")
-    if (replacement.subject_user_id, replacement.key) != (
-        previous.subject_user_id,
-        previous.key,
-    ):
-        raise ValueError("replacement subject and key must match")
-    if not _scope_contains(previous, replacement):
-        raise ValueError("replacement cannot widen predecessor scope")
+    validate_predecessor(previous, replacement)
     validate_claim_evidence_scope(replacement, evidence)
 
 
