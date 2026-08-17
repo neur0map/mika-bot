@@ -188,6 +188,38 @@ async def test_relationship_retrieval_keeps_person_attribution_and_public_scope_
     assert recall.rejection_reasons["dm-secret"] == "direct_message_scope_mismatch"
 
 
+async def test_unscoped_aggregate_profile_never_leaks_private_guild_content_into_dm() -> None:
+    profile = ProfileVersionRecord(
+        "profile-private",
+        "u1",
+        "private guild launch",
+        "private guild launch details",
+        "v1",
+        "v1",
+        "policy-1",
+        datetime(2026, 8, 17, tzinfo=UTC),
+    )
+    dm = ConversationEnvelope("dm", "dm1", "", "u1", "Ada", "launch", True, datetime.now(UTC))
+
+    recall = await AffinityRetriever(
+        ScopedSource(), relationship_source=RelationshipSource(profile=profile), minimum_score=0.0
+    ).retrieve(dm)
+
+    assert "private guild" not in recall.text
+    assert f"profile:{profile.profile_version_id}" not in recall.candidate_ids
+
+
+async def test_same_scope_claim_recall_remains_available_without_aggregate_profiles() -> None:
+    recall = await AffinityRetriever(
+        ScopedSource(),
+        relationship_source=RelationshipSource((_claim("same-scope", "Hades II"),)),
+        minimum_score=0.0,
+    ).retrieve(_envelope("Hades"))
+
+    assert "Hades II" in recall.text
+    assert recall.selected_ids == ("same-scope",)
+
+
 async def test_relationship_mode_rejects_legacy_unscoped_facts_instead_of_falling_back() -> None:
     source = ScopedSource()
 

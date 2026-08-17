@@ -26,6 +26,7 @@ from mika.conversation.relationships.relation import classify_relation
 from mika.conversation.relationships.service import (
     ConsolidationRun,
     ObservationInput,
+    ObservationResult,
     RelationshipMemoryService,
 )
 from mika.core.config import get_settings
@@ -56,7 +57,7 @@ class BackfillRepository(Protocol):
 class ArchiveCandidateObserver(Protocol):
     """Candidate-only observation boundary used by historical imports."""
 
-    async def observe_archive_candidate(self, source: ArchiveSourceRecord) -> object: ...
+    async def observe_archive_candidate(self, source: ArchiveSourceRecord) -> ObservationResult: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +124,7 @@ class RelationshipMemoryOperator:
         processed = 0
         for source in selected:
             try:
-                await self._observer.observe_archive_candidate(source)
+                result = await self._observer.observe_archive_candidate(source)
             except Exception as error:
                 return BackfillReport(
                     "degraded",
@@ -136,11 +137,28 @@ class RelationshipMemoryOperator:
                     source.discord_message_id,
                     type(error).__name__,
                 )
+            if result.outcome != "observed" or result.policy_version_id != policy.policy_version_id:
+                reason = (
+                    "policy_changed"
+                    if result.policy_version_id != policy.policy_version_id
+                    else f"observation_{result.outcome}"
+                )
+                return BackfillReport(
+                    "degraded",
+                    processed,
+                    len(selected),
+                    True,
+                    page.invalid_records,
+                    result.policy_version_id,
+                    cursor,
+                    source.discord_message_id,
+                    reason,
+                )
             cursor = ArchiveCursor(
                 self._source_name,
                 source.archive_created_at,
                 source.discord_message_id,
-                policy.policy_version_id,
+                result.policy_version_id,
                 self._clock(),
             )
             await self._repository.advance_cursor(cursor)

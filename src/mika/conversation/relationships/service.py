@@ -347,7 +347,11 @@ class RelationshipMemoryService:
                 run = ConsolidationRun(False, policy_id)
             else:
                 phase = perf_counter()
-                records = tuple(await self._repository.claims_for_subject(subject_user_id))
+                records = tuple(
+                    item
+                    for item in await self._repository.claims_for_subject(subject_user_id)
+                    if _claim_in_scope(item, visibility_kind, guild_id, channel_id)
+                )
                 evidence = tuple(
                     await self._repository.evidence_for_claims([item.claim_id for item in records])
                 )
@@ -355,8 +359,16 @@ class RelationshipMemoryService:
                 phases["repository_read"] = (perf_counter() - phase) * 1000
                 now = self._clock()
                 evidence_by_claim_id = _evidence_by_claim(records, evidence)
-                predecessor = _predecessor_profile(
-                    active_profile, records, evidence_by_claim_id, now
+                claim_ids = {item.claim_id for item in records}
+                profile_is_scope_complete = bool(
+                    active_profile
+                    and active_profile.claim_links
+                    and all(link.claim_id in claim_ids for link in active_profile.claim_links)
+                )
+                predecessor = (
+                    _predecessor_profile(active_profile, records, evidence_by_claim_id, now)
+                    if profile_is_scope_complete
+                    else None
                 )
                 phase = perf_counter()
                 result = self._consolidator.consolidate(
@@ -368,7 +380,13 @@ class RelationshipMemoryService:
                 phases["consolidation"] = (perf_counter() - phase) * 1000
                 phase = perf_counter()
                 run = await self._publish_profile(
-                    subject_user_id, policy.policy_version_id, records, result
+                    subject_user_id,
+                    policy.policy_version_id,
+                    records,
+                    result,
+                    compatible_active_profile=(
+                        active_profile if profile_is_scope_complete else None
+                    ),
                 )
                 phases["publication"] = (perf_counter() - phase) * 1000
             phase = perf_counter()
@@ -429,7 +447,6 @@ class RelationshipMemoryService:
             profile_changed=None,
             policy_version_id=policy_version_id,
             phase_durations_ms=phases,
-        )
 
     def _emit_consolidation(
         self,
@@ -452,7 +469,6 @@ class RelationshipMemoryService:
             policy_version_id=run.policy_version_id,
             phase_durations_ms=phases,
         )
-
     def _emit_failure(
         self,
         operation: str,
@@ -558,9 +574,11 @@ class RelationshipMemoryService:
         policy_version_id: str,
         records: Sequence[ClaimRecord],
         result: ConsolidationResult,
+        *,
+        compatible_active_profile: ProfileVersionRecord | None = None,
     ) -> ConsolidationRun:
         profile = result.profile
-        active = await self._repository.active_profile(subject_user_id)
+        active = compatible_active_profile
         claim_links = () if profile is None else _profile_claim_links(profile)
         unchanged = (
             profile is not None
@@ -615,6 +633,32 @@ class RelationshipMemoryService:
             len(result.claims),
             result.rejected,
         )
+
+
+def _claim_in_scope(
+    claim: ClaimRecord,
+    visibility_kind: str,
+    guild_id: str | None,
+    channel_id: str | None,
+) -> bool:
+    """Keep consolidation inputs within the exact requested retrieval scope."""
+    if claim.visibility_kind == "global_explicit":
+        return True
+    if visibility_kind == "direct_message":
+        return claim.visibility_kind == "direct_message" and claim.channel_id == channel_id
+    if visibility_kind == "channel":
+        return (
+            claim.visibility_kind == "channel"
+            and claim.guild_id == guild_id
+            and claim.channel_id == channel_id
+        )
+    if visibility_kind == "guild":
+        if claim.guild_id != guild_id:
+            return False
+        return claim.visibility_kind == "guild" or (
+            claim.visibility_kind == "channel" and claim.channel_id == channel_id
+        )
+    return False
 
 
 def _claim_write(

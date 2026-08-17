@@ -8,7 +8,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from tests.conversation.relationships.test_service import Extractor, service_for
+from tests.conversation.relationships.test_service import (
+    Extractor,
+    claim_write,
+    evidence_write,
+    service_for,
+)
 from typer.testing import CliRunner
 
 from mika.cli.app import app as cli_app
@@ -18,6 +23,7 @@ from mika.cli.commands.relationship_memory import (
     deletion_confirmation,
     render_status,
 )
+from mika.conversation.relationships.service import ObservationResult
 from mika.persistence.conversations.archive_reader import ArchiveReader
 from mika.persistence.conversations.relationship_records import (
     ArchiveCursor,
@@ -55,10 +61,33 @@ class CandidateObserver:
         self.fail_on = fail_on
         self.seen: list[str] = []
 
-    async def observe_archive_candidate(self, source: ArchiveSourceRecord) -> None:
+    async def observe_archive_candidate(self, source: ArchiveSourceRecord) -> ObservationResult:
         if source.discord_message_id == self.fail_on:
             raise RuntimeError("extractor failed")
         self.seen.append(source.discord_message_id)
+        return ObservationResult("observed", "policy-1")
+
+
+class PolicySwitchObserver:
+    """Changes the effective policy after one committed source."""
+
+    def __init__(self, repository: Repository) -> None:
+        self.repository = repository
+        self.calls = 0
+
+    async def observe_archive_candidate(self, source: ArchiveSourceRecord) -> ObservationResult:
+        self.calls += 1
+        if self.calls == 1:
+            return ObservationResult("observed", "policy-1")
+        self.repository.policy = RelationshipMemoryPolicyVersionRecord(
+            "policy-2", True, False, False, False, {"dm_to_public": False}, "changed", NOW
+        )
+        return ObservationResult("observed", "policy-2")
+
+
+class DisabledObserver:
+    async def observe_archive_candidate(self, source: ArchiveSourceRecord) -> ObservationResult:
+        return ObservationResult("disabled", "policy-1")
 
 
 def _archive(path: Path) -> None:
@@ -157,6 +186,40 @@ async def test_disabled_learning_and_dry_run_never_advance_cursor(tmp_path: Path
     assert disabled.saved_cursor is None
 
 
+@pytest.mark.asyncio
+async def test_backfill_stops_before_checkpointing_a_mid_page_policy_change(tmp_path: Path) -> None:
+    path = tmp_path / "archive.sqlite3"
+    _archive(path)
+    repository = Repository()
+    operator = RelationshipMemoryOperator(
+        repository, ArchiveReader(path), PolicySwitchObserver(repository), clock=lambda: NOW
+    )
+
+    report = await operator.backfill(limit=3)
+
+    assert report.processed == 1
+    assert report.failure == "policy_changed"
+    assert report.failed_message_id == "101"
+    assert repository.saved_cursor is not None
+    assert repository.saved_cursor.discord_message_id == "100"
+    assert repository.saved_cursor.policy_version_id == "policy-1"
+
+
+@pytest.mark.asyncio
+async def test_backfill_never_checkpoints_a_disabled_observation(tmp_path: Path) -> None:
+    path = tmp_path / "archive.sqlite3"
+    _archive(path)
+    repository = Repository()
+
+    report = await RelationshipMemoryOperator(
+        repository, ArchiveReader(path), DisabledObserver(), clock=lambda: NOW
+    ).backfill(limit=1)
+
+    assert report.processed == 0
+    assert report.failure == "observation_disabled"
+    assert repository.saved_cursor is None
+
+
 def test_archive_reader_accepts_training_archive_schema_without_copying_resources(
     tmp_path: Path,
 ) -> None:
@@ -245,6 +308,49 @@ async def test_archive_candidates_keep_person_and_channel_scope_isolated(tmp_pat
         assert {(item.subject_user_id, item.guild_id, item.channel_id) for item in user_two} == {
             ("user-2", "g-2", "c-2")
         }
+    finally:
+        await repository.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_consolidation_only_uses_the_requested_exact_scope(tmp_path: Path) -> None:
+    service, repository, engine = await service_for(tmp_path / "memory.sqlite3", Extractor())
+    try:
+        await repository.add_evidence(
+            claim_write(
+                "guild-one",
+                key="project",
+                value="private-alpha",
+                evidence_class="explicit",
+                guild_id="g-1",
+                channel_id="c-1",
+            ),
+            evidence_write("100", guild_id="g-1", channel_id="c-1"),
+        )
+        await repository.activate_claim("guild-one", confirmed_at=NOW)
+        await repository.add_evidence(
+            claim_write(
+                "guild-two",
+                key="project",
+                value="private-beta",
+                evidence_class="explicit",
+                guild_id="g-2",
+                channel_id="c-2",
+            ),
+            evidence_write("101", guild_id="g-2", channel_id="c-2"),
+        )
+        await repository.activate_claim("guild-two", confirmed_at=NOW)
+
+        await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="g-1", channel_id="c-1"
+        )
+        profile = await repository.active_profile("user-1")
+
+        assert profile is not None
+        assert "private-alpha" in profile.overview_text
+        assert "private-beta" not in profile.overview_text
+        assert {link.claim_id for link in profile.claim_links} == {"guild-one"}
     finally:
         await repository.close()
         await engine.dispose()

@@ -14,7 +14,6 @@ from mika.conversation.relationships.candidates import (
     as_aware,
     claim_candidates,
     message_candidate,
-    profile_candidate,
     scope_for_envelope,
 )
 from mika.conversation.relationships.contracts import RelationDecision
@@ -223,11 +222,8 @@ class AffinityRetriever:
             guild_id=scope.guild_id,
             channel_id=scope.channel_id,
         )
-        profile = await relationship_source.active_profile(envelope.author_id)
         messages = await self._source.candidates(envelope.channel_id, envelope.author_id)
         candidates = [*claim_candidates(claims), *self._relationship_candidates]
-        if profile is not None and scope.visibility_kind == "direct_message":
-            candidates.append(profile_candidate(profile, scope))
         candidates.extend(message_candidate(item, envelope, scope) for item in messages)
         ranking = self._scorer.rank(
             envelope.text,
