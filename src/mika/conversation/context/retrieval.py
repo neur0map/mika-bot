@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Protocol
@@ -25,10 +25,12 @@ from mika.conversation.relationships.scoring import (
     HybridMemoryScorer,
     SemanticScorer,
 )
+from mika.core.logging import get_logger
 from mika.persistence.conversations.relationship_records import ClaimRecord, ProfileVersionRecord
 
 _TOKEN = re.compile(r"[a-z0-9']{3,}", re.I)
 _CANDIDATE_LIMIT = 80
+logger = get_logger(__name__)
 
 
 class CandidateMessage(Protocol):
@@ -62,6 +64,12 @@ class RelationshipMemorySource(Protocol):
     ) -> Sequence[ClaimRecord]: ...
 
     async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None: ...
+
+
+class ContextRetriever(Protocol):
+    """One fail-open context source used by merged retrieval."""
+
+    async def retrieve(self, envelope: ConversationEnvelope) -> MemoryRecall: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +110,24 @@ class MemoryRecall:
                 ranking_quality_signal=self.ranking_quality_signal,
             )
         return details
+
+
+class MergedRetriever:
+    """Merge independent recall sources while removing repeated prompt sections."""
+
+    def __init__(self, *retrievers: ContextRetriever) -> None:
+        self._retrievers = retrievers
+
+    async def retrieve(self, envelope: ConversationEnvelope) -> MemoryRecall:
+        """Return all available recalls even when one source fails."""
+        recalls: list[MemoryRecall] = []
+        for retriever in self._retrievers:
+            try:
+                recalls.append(await retriever.retrieve(envelope))
+            except Exception as error:
+                logger.warning("context recall source failed: %s", type(error).__name__)
+                continue
+        return _merge_recalls(recalls)
 
 
 class AffinityRetriever:
@@ -248,6 +274,46 @@ class AffinityRetriever:
 
 def _terms(text: str) -> set[str]:
     return {match.group(0).casefold() for match in _TOKEN.finditer(text)}
+
+
+def merge_memory_text(*values: str) -> str:
+    """Join nonempty memory sections once using normalized exact deduplication."""
+    sections: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for section in value.split("\n\n"):
+            rendered = section.strip()
+            key = " ".join(rendered.casefold().split())
+            if rendered and key not in seen:
+                sections.append(rendered)
+                seen.add(key)
+    return "\n\n".join(sections)
+
+
+def _merge_recalls(recalls: Sequence[MemoryRecall]) -> MemoryRecall:
+    return MemoryRecall(
+        text=merge_memory_text(*(item.text for item in recalls)),
+        fact_count=sum(item.fact_count for item in recalls),
+        match_count=sum(item.match_count for item in recalls),
+        feedback_count=sum(item.feedback_count for item in recalls),
+        relationship_retrieval=any(item.relationship_retrieval for item in recalls),
+        candidate_ids=_unique(item for recall in recalls for item in recall.candidate_ids),
+        selected_ids=_unique(item for recall in recalls for item in recall.selected_ids),
+        rejected_ids=_unique(item for recall in recalls for item in recall.rejected_ids),
+        selected_tiers={
+            key: value for item in recalls for key, value in item.selected_tiers.items()
+        },
+        rejection_reasons={
+            key: value for item in recalls for key, value in item.rejection_reasons.items()
+        },
+        estimated_token_cost=sum(item.estimated_token_cost for item in recalls),
+        latency_ms=sum(item.latency_ms for item in recalls),
+        ranking_quality_signal=max((item.ranking_quality_signal for item in recalls), default=0.0),
+    )
+
+
+def _unique(values: Iterable[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(values))
 
 
 def _limit_messages(

@@ -83,6 +83,12 @@ class MemorySettings(BaseSettings):
     honcho_base_url: str = "http://127.0.0.1:8000"
     honcho_workspace: str = "default"
     honcho_session: str = "default"
+    relationship_learning_enabled: bool = False
+    relationship_provider_extraction_enabled: bool = False
+    relationship_semantic_scoring_enabled: bool = False
+    relationship_shadow_mode: bool = True
+    relationship_batch_size: int = Field(default=25, ge=1, le=1000)
+    relationship_consolidation_interval_seconds: float = Field(default=604_800.0, gt=0)
 
 
 class ToolSettings(BaseSettings):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from datetime import datetime
@@ -61,6 +62,7 @@ from mika.persistence.conversations.relationship_transitions import (
     validate_new_predecessor,
 )
 from mika.persistence.conversations.social_models import UserFact
+from mika.persistence.models.guild_config import GuildConfig
 
 _CONSOLIDATION_READ_PAGE_SIZE = 500
 
@@ -313,6 +315,22 @@ class RelationshipMemoryRepository:
         )
         stored = await self._session.scalar(statement)
         return None if stored is None else policy_record(stored)
+
+    async def last_consolidated_at(self, subject_user_id: str) -> datetime | None:
+        """Return the independent durable timestamp of the last successful run."""
+        stored = await self._session.get(GuildConfig, (0, _consolidation_key(subject_user_id)))
+        return None if stored is None else as_utc(datetime.fromisoformat(stored.value))
+
+    async def record_consolidated_at(self, subject_user_id: str, completed_at: datetime) -> None:
+        """Persist successful consolidation even when it publishes no profile."""
+        key = _consolidation_key(subject_user_id)
+        stored = await self._session.get(GuildConfig, (0, key))
+        value = as_utc(completed_at).isoformat()
+        if stored is None:
+            self._session.add(GuildConfig(guild_id=0, key=key, value=value))
+        else:
+            stored.value = value
+        await self._commit()
 
     async def advance_cursor(self, cursor: ArchiveCursor) -> None:
         """Advance one archive cursor without permitting regression."""
@@ -567,3 +585,8 @@ class RelationshipMemoryRepository:
         except SQLAlchemyError:
             await self._session.rollback()
             raise
+
+
+def _consolidation_key(subject_user_id: str) -> str:
+    digest = hashlib.sha256(subject_user_id.encode()).hexdigest()[:24]
+    return f"relationship_consolidated:{digest}"

@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Protocol, cast
 
 from mika.conversation.context.retrieval import MemoryRecall
@@ -24,6 +25,7 @@ from mika.conversation.relationships.contracts import (
 )
 from mika.conversation.relationships.extraction import EvidenceProposal
 from mika.conversation.relationships.profile import ProfileEntry, RelationshipProfile
+from mika.conversation.relationships.telemetry import RelationshipTelemetry
 from mika.persistence.conversations.relationship_records import (
     ArchiveCursor,
     ArchiveSourceRecord,
@@ -137,6 +139,10 @@ class RelationshipRepository(Protocol):
     async def record_recall(self, event: RecallEventWrite) -> None: ...
     async def cursor(self, source_name: str) -> ArchiveCursor | None: ...
     async def advance_cursor(self, cursor: ArchiveCursor) -> None: ...
+    async def last_consolidated_at(self, subject_user_id: str) -> datetime | None: ...
+    async def record_consolidated_at(
+        self, subject_user_id: str, completed_at: datetime
+    ) -> None: ...
 
 
 class EvidenceExtractor(Protocol):
@@ -183,6 +189,7 @@ class RelationshipMemoryService:
         pending_source_name: str = "shared_archive",
         batch_size: int = 50,
         clock: Callable[[], datetime] | None = None,
+        telemetry: RelationshipTelemetry | None = None,
     ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
@@ -196,48 +203,115 @@ class RelationshipMemoryService:
         self._pending_source_name = pending_source_name
         self._batch_size = batch_size
         self._clock = clock or (lambda: datetime.now(UTC))
+        self.telemetry = telemetry or RelationshipTelemetry()
 
     async def observe_turn(self, observation: ObservationInput) -> ObservationResult:
         """Extract and persist one completed visible turn under its effective policy."""
-        policy = await self._repository.active_policy_version()
-        if policy is None or not policy.relationship_learning_enabled:
+        started = perf_counter()
+        phases: dict[str, float] = {}
+        policy_id: str | None = None
+        try:
+            phase = perf_counter()
+            policy = await self._repository.active_policy_version()
+            phases["policy"] = (perf_counter() - phase) * 1000
             policy_id = None if policy is None else policy.policy_version_id
-            return ObservationResult("disabled", policy_id)
-        relation = self._classify(observation)
-        proposals = tuple(await self._extractor.extract(observation, relation))
-        activated = 0
-        for proposal in proposals:
-            activated += await self._persist_proposal(observation, proposal, policy)
-        return ObservationResult("observed", policy.policy_version_id, len(proposals), activated)
+            allowed = policy is not None and _visibility_allowed(
+                policy.visibility_rules, observation.visibility_kind
+            )
+            if policy is None or not policy.relationship_learning_enabled or not allowed:
+                result = ObservationResult("disabled", policy_id)
+            else:
+                relation = self._classify(observation)
+                phase = perf_counter()
+                try:
+                    proposals = tuple(await self._extractor.extract(observation, relation))
+                finally:
+                    phases["extraction"] = (perf_counter() - phase) * 1000
+                activated = 0
+                phase = perf_counter()
+                for proposal in proposals:
+                    activated += await self._persist_proposal(observation, proposal, policy)
+                phases["repository"] = (perf_counter() - phase) * 1000
+                result = ObservationResult(
+                    "observed", policy.policy_version_id, len(proposals), activated
+                )
+            fallback_reason = (
+                next(
+                    (
+                        proposal.reason
+                        for proposal in proposals
+                        if proposal.reason.startswith("provider_fallback:")
+                    ),
+                    None,
+                )
+                if result.outcome == "observed"
+                else None
+            )
+            self._emit_observation(result, observation.message_id, started, phases, fallback_reason)
+            return result
+        except Exception as error:
+            self._emit_failure(
+                "observation", observation.message_id, started, policy_id, error, phases
+            )
+            raise
 
     async def recall(self, envelope: ConversationEnvelope) -> MemoryRecall:
         """Retrieve scoped prompt memory and persist an idempotent content-free trace."""
-        policy = await self._repository.active_policy_version()
-        recalled = await self._retriever.retrieve(envelope)
-        if policy is None or not policy.relationship_learning_enabled:
-            return recalled
-        relation = self._classify(ObservationInput.from_envelope(envelope))
-        await self._repository.record_recall(
-            RecallEventWrite(
-                recall_event_id=_stable_id("recall", policy.policy_version_id, envelope.message_id),
-                subject_user_id=envelope.author_id,
-                visibility_kind="guild" if envelope.guild_id else "direct_message",
-                guild_id=envelope.guild_id or None,
-                channel_id=envelope.channel_id,
-                query_hash=f"sha256:{hashlib.sha256(envelope.text.encode()).hexdigest()}",
-                relation_label=relation.relation,
-                candidate_ids=recalled.candidate_ids,
-                selected_claim_ids=recalled.selected_ids,
-                selected_tiers=recalled.selected_tiers,
-                rejection_reasons=recalled.rejection_reasons,
-                estimated_token_cost=recalled.estimated_token_cost,
-                latency_ms=recalled.latency_ms,
-                retrieval_version="relationship-service-v1",
-                policy_version_id=policy.policy_version_id,
-                created_at=self._clock(),
+        started = perf_counter()
+        phases: dict[str, float] = {}
+        policy_id: str | None = None
+        try:
+            phase = perf_counter()
+            policy = await self._repository.active_policy_version()
+            phases["policy"] = (perf_counter() - phase) * 1000
+            policy_id = None if policy is None else policy.policy_version_id
+            visibility = "guild" if envelope.guild_id else "direct_message"
+            allowed = policy is not None and _visibility_allowed(
+                policy.visibility_rules, visibility
             )
-        )
-        return recalled
+            if policy is None or not policy.relationship_learning_enabled or not allowed:
+                recalled = MemoryRecall(relationship_retrieval=True)
+                self._emit_recall(
+                    recalled, envelope.message_id, started, policy_id, "disabled", phases
+                )
+                return recalled
+            phase = perf_counter()
+            try:
+                recalled = await self._retriever.retrieve(envelope)
+            finally:
+                phases["ranking"] = (perf_counter() - phase) * 1000
+            relation = self._classify(ObservationInput.from_envelope(envelope))
+            phase = perf_counter()
+            await self._repository.record_recall(
+                RecallEventWrite(
+                    recall_event_id=_stable_id(
+                        "recall", policy.policy_version_id, envelope.message_id
+                    ),
+                    subject_user_id=envelope.author_id,
+                    visibility_kind="guild" if envelope.guild_id else "direct_message",
+                    guild_id=envelope.guild_id or None,
+                    channel_id=envelope.channel_id,
+                    query_hash=f"sha256:{hashlib.sha256(envelope.text.encode()).hexdigest()}",
+                    relation_label=relation.relation,
+                    candidate_ids=recalled.candidate_ids,
+                    selected_claim_ids=recalled.selected_ids,
+                    selected_tiers=recalled.selected_tiers,
+                    rejection_reasons=recalled.rejection_reasons,
+                    estimated_token_cost=recalled.estimated_token_cost,
+                    latency_ms=recalled.latency_ms,
+                    retrieval_version="relationship-service-v1",
+                    policy_version_id=policy.policy_version_id,
+                    created_at=self._clock(),
+                )
+            )
+            phases["repository"] = (perf_counter() - phase) * 1000
+            self._emit_recall(recalled, envelope.message_id, started, policy_id, None, phases)
+            if policy.visibility_rules.get("shadow_mode", False):
+                return replace(recalled, text="")
+            return recalled
+        except Exception as error:
+            self._emit_failure("retrieval", envelope.message_id, started, policy_id, error, phases)
+            raise
 
     async def consolidate_user(
         self,
@@ -248,30 +322,146 @@ class RelationshipMemoryService:
         channel_id: str | None,
     ) -> ConsolidationRun:
         """Promote full claim history and publish a profile only when content changes."""
-        policy = await self._repository.active_policy_version()
-        if policy is None or not policy.relationship_learning_enabled:
-            return ConsolidationRun(False, None if policy is None else policy.policy_version_id)
-        records = tuple(await self._repository.claims_for_subject(subject_user_id))
-        evidence = tuple(
-            await self._repository.evidence_for_claims([item.claim_id for item in records])
+        started = perf_counter()
+        phases: dict[str, float] = {}
+        policy_id: str | None = None
+        try:
+            phase = perf_counter()
+            policy = await self._repository.active_policy_version()
+            phases["policy"] = (perf_counter() - phase) * 1000
+            policy_id = None if policy is None else policy.policy_version_id
+            if policy is None or not policy.relationship_learning_enabled:
+                run = ConsolidationRun(False, policy_id)
+            else:
+                phase = perf_counter()
+                records = tuple(await self._repository.claims_for_subject(subject_user_id))
+                evidence = tuple(
+                    await self._repository.evidence_for_claims([item.claim_id for item in records])
+                )
+                active_profile = await self._repository.active_profile(subject_user_id)
+                phases["repository_read"] = (perf_counter() - phase) * 1000
+                now = self._clock()
+                evidence_by_claim_id = _evidence_by_claim(records, evidence)
+                predecessor = _predecessor_profile(
+                    active_profile, records, evidence_by_claim_id, now
+                )
+                phase = perf_counter()
+                result = self._consolidator.consolidate(
+                    tuple(_relationship_claim(item) for item in records),
+                    evidence_by_claim_id=evidence_by_claim_id,
+                    predecessor=predecessor,
+                    now=now,
+                )
+                phases["consolidation"] = (perf_counter() - phase) * 1000
+                phase = perf_counter()
+                run = await self._publish_profile(
+                    subject_user_id, policy.policy_version_id, records, result
+                )
+                phases["publication"] = (perf_counter() - phase) * 1000
+            phase = perf_counter()
+            await self._repository.record_consolidated_at(subject_user_id, self._clock())
+            phases["cadence"] = (perf_counter() - phase) * 1000
+            self._emit_consolidation(run, subject_user_id, started, phases)
+            return run
+        except Exception as error:
+            self._emit_failure("consolidation", subject_user_id, started, policy_id, error, phases)
+            raise
+
+    async def last_consolidated_at(self, subject_user_id: str) -> datetime | None:
+        """Return the durable active-profile timestamp used by scheduler cadence."""
+        return await self._repository.last_consolidated_at(subject_user_id)
+
+    def _emit_observation(
+        self,
+        result: ObservationResult,
+        correlation_id: str,
+        started: float,
+        phases: Mapping[str, float],
+        fallback_reason: str | None,
+    ) -> None:
+        self.telemetry.emit(
+            "observation",
+            result.outcome,
+            correlation_id=correlation_id,
+            duration_ms=(perf_counter() - started) * 1000,
+            candidate_count=result.candidate_count,
+            selected_count=result.activated_count,
+            rejected_count=result.candidate_count - result.activated_count,
+            estimated_tokens=0,
+            fallback_reason=fallback_reason,
+            profile_changed=None,
+            policy_version_id=result.policy_version_id,
+            phase_durations_ms=phases,
         )
-        active_profile = await self._repository.active_profile(subject_user_id)
-        now = self._clock()
-        evidence_by_claim_id = _evidence_by_claim(records, evidence)
-        predecessor = _predecessor_profile(
-            active_profile,
-            records,
-            evidence_by_claim_id,
-            now,
+
+    def _emit_recall(
+        self,
+        recall: MemoryRecall,
+        correlation_id: str,
+        started: float,
+        policy_version_id: str | None,
+        fallback_reason: str | None,
+        phases: Mapping[str, float],
+    ) -> None:
+        self.telemetry.emit(
+            "retrieval",
+            "recalled" if recall.selected_ids else "no_match",
+            correlation_id=correlation_id,
+            duration_ms=(perf_counter() - started) * 1000,
+            candidate_count=len(recall.candidate_ids),
+            selected_count=len(recall.selected_ids),
+            rejected_count=len(recall.rejected_ids),
+            estimated_tokens=recall.estimated_token_cost,
+            fallback_reason=fallback_reason,
+            profile_changed=None,
+            policy_version_id=policy_version_id,
+            phase_durations_ms=phases,
         )
-        result = self._consolidator.consolidate(
-            tuple(_relationship_claim(item) for item in records),
-            evidence_by_claim_id=evidence_by_claim_id,
-            predecessor=predecessor,
-            now=now,
+
+    def _emit_consolidation(
+        self,
+        run: ConsolidationRun,
+        correlation_id: str,
+        started: float,
+        phases: Mapping[str, float],
+    ) -> None:
+        self.telemetry.emit(
+            "consolidation",
+            "changed" if run.profile_changed else "no_op",
+            correlation_id=correlation_id,
+            duration_ms=(perf_counter() - started) * 1000,
+            candidate_count=run.candidate_count,
+            selected_count=int(run.profile_changed),
+            rejected_count=int(run.rejected),
+            estimated_tokens=0,
+            fallback_reason="predecessor_rejected" if run.rejected else None,
+            profile_changed=run.profile_changed,
+            policy_version_id=run.policy_version_id,
+            phase_durations_ms=phases,
         )
-        return await self._publish_profile(
-            subject_user_id, policy.policy_version_id, records, result
+
+    def _emit_failure(
+        self,
+        operation: str,
+        correlation_id: str,
+        started: float,
+        policy_version_id: str | None,
+        error: Exception,
+        phases: Mapping[str, float],
+    ) -> None:
+        self.telemetry.emit(
+            operation,
+            "failed",
+            correlation_id=correlation_id,
+            duration_ms=(perf_counter() - started) * 1000,
+            candidate_count=0,
+            selected_count=0,
+            rejected_count=0,
+            estimated_tokens=0,
+            fallback_reason=type(error).__name__,
+            profile_changed=None,
+            policy_version_id=policy_version_id,
+            phase_durations_ms=phases,
         )
 
     async def run_pending_observations(
@@ -639,3 +829,8 @@ def _claim_id(observation: ObservationInput, proposal: EvidenceProposal) -> str:
 def _stable_id(prefix: str, *parts: str) -> str:
     digest = hashlib.sha256(chr(0).join(parts).encode()).hexdigest()
     return f"{prefix}-{digest[:24]}"
+
+
+def _visibility_allowed(rules: Mapping[str, bool], visibility_kind: str) -> bool:
+    """Preserve legacy policies while enforcing explicit runtime scope switches."""
+    return rules.get(visibility_kind, True)

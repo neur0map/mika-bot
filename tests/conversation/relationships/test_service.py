@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -106,6 +107,21 @@ class Retriever:
             selected_tiers={claim.claim_id: "index" for claim in claims},
             estimated_token_cost=len(claims),
         )
+
+
+class FailingExtractor(Extractor):
+    async def extract(
+        self, observation: ObservationInput, relation: RelationDecision
+    ) -> tuple[EvidenceProposal, ...]:
+        raise RuntimeError("provider unavailable")
+
+
+class FallbackExtractor(Extractor):
+    async def extract(
+        self, observation: ObservationInput, relation: RelationDecision
+    ) -> tuple[EvidenceProposal, ...]:
+        proposal = (await super().extract(observation, relation))[0]
+        return (replace(proposal, reason="provider_fallback:invalid_output:fixture"),)
 
 
 def observation(message_id: str, text: str = "I like Hades") -> ObservationInput:
@@ -314,6 +330,111 @@ async def test_observation_records_effective_policy_version(tmp_path: Path) -> N
     finally:
         await store.close()
         await engine.dispose()
+
+
+async def test_shadow_mode_measures_recall_without_injecting_relationship_text(
+    tmp_path: Path,
+) -> None:
+    store, engine = await repository(tmp_path / "memory.db")
+    await store.write_policy_version(
+        replace(policy(), visibility_rules={"dm_to_public": False, "shadow_mode": True})
+    )
+    service = RelationshipMemoryService(
+        repository=store,
+        extractor=Extractor(),
+        activation_policy=ActivationPolicy(),
+        classifier=Classifier(),
+        retriever=Retriever(store),
+        consolidator=RelationshipConsolidator(),
+    )
+    try:
+        await service.observe_turn(observation("100"))
+
+        recalled = await service.recall(envelope())
+
+        async with inspection_factory(engine)() as inspection:
+            trace = await inspection.scalar(select(StoredRecallEvent))
+        assert recalled.text == ""
+        assert recalled.relationship_retrieval is True
+        assert trace is not None
+        assert trace.selected_claim_ids_json != "[]"
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_service_emits_one_content_free_record_per_operation(tmp_path: Path) -> None:
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        await service.observe_turn(observation("telemetry-source"))
+        await service.recall(envelope("telemetry-recall"))
+        await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+
+        records = service.telemetry.records
+        assert [record.operation for record in records] == [
+            "observation",
+            "retrieval",
+            "consolidation",
+        ]
+        assert all("telemetry-source" not in repr(record) for record in records)
+        assert all(record.policy_version_id == "policy-1" for record in records)
+        assert set(records[0].phase_durations_ms) >= {"policy", "extraction", "repository"}
+        assert set(records[1].phase_durations_ms) >= {"policy", "ranking", "repository"}
+        assert set(records[2].phase_durations_ms) >= {
+            "policy",
+            "repository_read",
+            "consolidation",
+            "publication",
+            "cadence",
+        }
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_no_profile_consolidation_persists_independent_cadence(tmp_path: Path) -> None:
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        run = await service.consolidate_user(
+            "user-without-claims",
+            visibility_kind="guild",
+            guild_id="guild-1",
+            channel_id="channel-1",
+        )
+
+        assert run.profile_version_id is None
+        assert await service.last_consolidated_at("user-without-claims") is not None
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_failure_and_provider_fallback_keep_operation_phase_metadata(
+    tmp_path: Path,
+) -> None:
+    failed, failed_store, failed_engine = await service_for(
+        tmp_path / "failed.db", FailingExtractor()
+    )
+    fallback, fallback_store, fallback_engine = await service_for(
+        tmp_path / "fallback.db", FallbackExtractor()
+    )
+    try:
+        with pytest.raises(RuntimeError, match="provider unavailable"):
+            await failed.observe_turn(observation("failed-source"))
+        await fallback.observe_turn(observation("fallback-source"))
+
+        failure_record = failed.telemetry.records[0]
+        fallback_record = fallback.telemetry.records[0]
+        assert set(failure_record.phase_durations_ms) >= {"policy", "extraction"}
+        assert failure_record.fallback_reason == "RuntimeError"
+        assert fallback_record.fallback_reason == "provider_fallback:invalid_output:fixture"
+    finally:
+        await failed_store.close()
+        await failed_engine.dispose()
+        await fallback_store.close()
+        await fallback_engine.dispose()
 
 
 async def test_consolidation_reads_candidate_history_and_is_profile_idempotent(

@@ -104,3 +104,4 @@ class TurnObservation:
     reply: str
     intent: str
     confidence: float
+    relationship_visible: bool = False

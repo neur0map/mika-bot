@@ -102,6 +102,9 @@ class ConversationEngine:
         """Learn from visible execution, advance cooldowns, and persist one trace."""
         self._actions.record_visible(action, execution, channel_id=envelope.channel_id)
         visible_reply = action.reply if execution.reply_message_id is not None else ""
+        visible = bool(
+            execution.reply_message_id or execution.applied_reactions or execution.media_url
+        )
         expression_observer = getattr(self._generator, "observe_expression", None)
         if expression_observer is not None and (visible_reply or execution.applied_reactions):
             expression_observer(
@@ -110,14 +113,17 @@ class ConversationEngine:
                 execution.applied_reactions,
             )
         await self._observer.observe(
-            TurnObservation(envelope, visible_reply, action.intent, action.confidence)
+            TurnObservation(
+                envelope,
+                visible_reply,
+                action.intent,
+                action.confidence,
+                relationship_visible=visible and not action.is_silent,
+            )
         )
         trace = self._pending.pop(envelope.message_id, None)
         if trace is None:
             return
-        visible = bool(
-            execution.reply_message_id or execution.applied_reactions or execution.media_url
-        )
         trace.record(
             "execution",
             "visible" if visible else "silent",

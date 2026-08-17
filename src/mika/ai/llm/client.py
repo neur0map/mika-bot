@@ -15,6 +15,7 @@ from mika.ai.llm.providers.factory import build_fallback_provider, build_provide
 from mika.ai.llm.tools.registry import ToolRegistry
 from mika.ai.llm.turn import MediaChoice, MikaTurn
 from mika.conversation.context import SelectedContext
+from mika.conversation.context.retrieval import merge_memory_text
 from mika.conversation.contracts import ConversationEnvelope
 from mika.conversation.generation import (
     GenerationConfig,
@@ -243,7 +244,7 @@ class LLMClient:
         generation_input = self._compose_generation_input(user_input, history, guidance.render())
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         reflection, _ = await last_reflection()
-        memory_context = "\n\n".join(value for value in (context.memory, recall) if value.strip())
+        memory_context = merge_memory_text(context.memory, recall)
         system = build_system_prompt(self._memory_context(memory_context, reflection))
         turn = await self._generation.generate(
             GenerationRequest(

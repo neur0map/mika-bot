@@ -63,6 +63,11 @@ def extract_deterministic_evidence(
     return tuple(proposals)
 
 
+def is_sensitive_evidence_text(text: str) -> bool:
+    """Return whether provider-backed extraction must be skipped entirely."""
+    return _SENSITIVE_CONTENT.search(text) is not None
+
+
 def _explicit_proposals(
     text: str,
     source_message_id: str,

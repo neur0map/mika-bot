@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from mika.conversation.context.contracts import MemoryCandidate
 from mika.conversation.context.facts import extract_explicit_facts
-from mika.conversation.context.retrieval import AffinityRetriever
+from mika.conversation.context.retrieval import AffinityRetriever, MemoryRecall, MergedRetriever
 from mika.conversation.contracts import ConversationEnvelope
 from mika.persistence.conversations.relationship_records import (
     ClaimRecord,
@@ -327,3 +327,36 @@ async def test_per_entry_cap_downgrades_to_precomputed_tier_without_slicing() ->
     assert recall.text.endswith("safe compact index")
     assert "overview representation" not in recall.text
     assert recall.rejection_reasons["bounded"] == "per_entry_cap:overview->index"
+
+
+async def test_merged_recall_deduplicates_context_and_fails_open() -> None:
+    class StaticRetriever:
+        def __init__(self, recall: MemoryRecall) -> None:
+            self.recall = recall
+
+        async def retrieve(self, envelope: ConversationEnvelope) -> MemoryRecall:
+            return self.recall
+
+    class BrokenRetriever:
+        async def retrieve(self, envelope: ConversationEnvelope) -> MemoryRecall:
+            raise RuntimeError("relationship store unavailable")
+
+    merged = MergedRetriever(
+        StaticRetriever(MemoryRecall("Known fact\n\nShared context", fact_count=1)),
+        BrokenRetriever(),
+        StaticRetriever(
+            MemoryRecall(
+                "Shared context\n\nRelationship overview",
+                relationship_retrieval=True,
+                candidate_ids=("profile-1",),
+                selected_ids=("profile-1",),
+            )
+        ),
+    )
+
+    recall = await merged.retrieve(_envelope())
+
+    assert recall.text == "Known fact\n\nShared context\n\nRelationship overview"
+    assert recall.fact_count == 1
+    assert recall.relationship_retrieval is True
+    assert recall.selected_ids == ("profile-1",)

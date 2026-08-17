@@ -207,11 +207,11 @@ token-lean TOON by default; add --format human|toon|json|markdown.
 
 Auto-generated from the Prowl index, refreshed on each `overview`/`init`. Prefer retrieving from Prowl (and reading the cited files) over grepping or relying on training memory; this is the current shape of the repo.
 
-- size: 422 files, 2783 symbols, 1373 edges (resolved 542, external deps 831, unresolved 0)
-- languages: python:314 markdown:100 bash:4 yaml:2 json:1 toml:1
-- subsystems: src/mika(172,python) · dev-testing(38,python) · tests/conversation(19,python) · tests(15,python) · tools/hooks(6,python) · tests/discord(4,python) · src/mika(3,python) · tests/persistence(3,python)
-- entrypoints: .pre-commit-config.yaml · dev-testing/conftest.py · dev-testing/harness.py · dev-testing/test_admin.py · dev-testing/test_animated.py · dev-testing/test_anime.py · dev-testing/test_antispam.py · dev-testing/test_convert.py · (+130 more)
-- central files (most depended-on): src/mika/core/config.py · src/mika/bot/commands/__init__.py · src/mika/core/logging.py · src/mika/conversation/contracts/__init__.py · src/mika/persistence/base.py
+- size: 458 files, 3229 symbols, 1615 edges (resolved 665, external deps 950, unresolved 0)
+- languages: python:347 markdown:103 bash:4 yaml:2 json:1 toml:1
+- subsystems: src/mika(191,python) · dev-testing(38,python) · tests/conversation(28,python) · tests(15,python) · tests/persistence(8,python) · tools/hooks(6,python) · tests/discord(4,python) · src/mika(3,python)
+- entrypoints: .pre-commit-config.yaml · dev-testing/conftest.py · dev-testing/harness.py · dev-testing/test_admin.py · dev-testing/test_animated.py · dev-testing/test_anime.py · dev-testing/test_antispam.py · dev-testing/test_convert.py · (+142 more)
+- central files (most depended-on): src/mika/core/config.py · src/mika/bot/commands/__init__.py · src/mika/persistence/base.py · src/mika/core/logging.py · src/mika/conversation/contracts/__init__.py
 - read these guides first: README.md · AGENTS.md · ARCHITECTURE.md · docs/GETTING-STARTED.md · docs/superpowers/specs/2026-08-16-mikav2-conversation-engine-design.md · docs/superpowers/specs/2026-08-17-evidence-backed-relationship-memory-design.md · docs/superpowers/specs/2026-08-17-natural-expression-skill-design.md
 
 Depth on demand: `prowl-agent find|def|outline|references <name>`, `search <text>`, `context search "<question>"`, `sketch <ui>`.

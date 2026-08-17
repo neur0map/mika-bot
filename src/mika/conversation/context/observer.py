@@ -6,6 +6,7 @@ from typing import Protocol
 
 from mika.conversation.context.contracts import TurnObservation
 from mika.conversation.context.facts import extract_explicit_facts
+from mika.conversation.contracts import ConversationEnvelope
 from mika.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,6 +36,12 @@ class FactWriter(Protocol):
     ) -> None: ...
 
 
+class RelationshipObservationSink(Protocol):
+    """Non-blocking destination for completed visible turns."""
+
+    def submit(self, envelope: ConversationEnvelope) -> bool: ...
+
+
 class TurnObserver:
     """Persist user input and only the assistant text that became visible."""
 
@@ -45,11 +52,13 @@ class TurnObserver:
         assistant_id: str = "mika",
         assistant_name: str = "mika",
         facts: FactWriter | None = None,
+        relationships: RelationshipObservationSink | None = None,
     ) -> None:
         self._memory = memory
         self._assistant_id = assistant_id
         self._assistant_name = assistant_name
         self._facts = facts
+        self._relationships = relationships
 
     async def observe(self, observation: TurnObservation) -> None:
         """Store a completed turn without inventing a message for silence."""
@@ -72,12 +81,20 @@ class TurnObserver:
                     )
                 except Exception as error:
                     logger.debug("explicit fact persistence failed: %s", error)
-        if not observation.reply.strip():
-            return
-        await self._memory.remember(
-            channel_id=envelope.channel_id,
-            author_id=self._assistant_id,
-            author_name=self._assistant_name,
-            role="assistant",
-            content=observation.reply,
-        )
+        if observation.reply.strip():
+            await self._memory.remember(
+                channel_id=envelope.channel_id,
+                author_id=self._assistant_id,
+                author_name=self._assistant_name,
+                role="assistant",
+                content=observation.reply,
+            )
+        if observation.relationship_visible and self._relationships is not None:
+            try:
+                accepted = self._relationships.submit(envelope)
+                if not accepted:
+                    logger.warning("relationship observation queue rejected visible turn")
+            except Exception as error:
+                logger.warning(
+                    "relationship observation submission failed: %s", type(error).__name__
+                )

@@ -132,6 +132,61 @@ pytest: 545 passed, 2 warnings in 56.27s
 The two warnings are the existing discord.py `audioop` and FastAPI/Starlette `httpx`
 deprecations.
 
+## Slice B: runtime integration and background lifecycle
+
+### RED
+
+- The first focused run stopped at collection because the bounded relationship observation job did
+  not exist.
+- Runtime integration tests then failed because merged recall and `BotApp.relationship_job` were
+  absent.
+- A shadow-mode regression returned relationship text to generation instead of recording the recall
+  without injecting it.
+
+### GREEN
+
+- `ConversationEngine` now marks relationship eligibility only after Discord reports a successful
+  reply, reaction, or media action. The existing local turn persists first; planned silence and
+  fully failed plans never enter the derived-memory queue.
+- A bounded readiness-gated worker performs extraction and interval-based per-user consolidation
+  away from the visible path, survives provider failures, and is cancelled and awaited by the bot
+  lifecycle.
+- `BotApp` composes the service with short-session persistence, deterministic extraction and
+  classification, scoped retrieval, immutable runtime policy publication, and safe disabled/shadow
+  defaults.
+- Legacy local recall, relationship recall, and Honcho context use normalized exact deduplication;
+  optional-source failures retain the remaining context.
+- Provider-backed extraction is selected only when enabled and falls back to deterministic evidence
+  extraction. Semantic scoring remains explicitly unsupported and is recorded disabled until a
+  genuine semantic provider is configured.
+- Content-free bounded telemetry records exactly one observation, retrieval, or consolidation
+  outcome with hashed correlation IDs, counts, timing, fallback reason, policy, and profile status.
+- The worker retains one bounded overflow batch, retries failed extraction once, and exposes a
+  rejected submission when both buffers are saturated.
+- Provider output is sensitive-text gated and always stored as capped inference evidence; it cannot
+  self-label a hallucinated claim as explicit or corrective evidence.
+- Queue overflow and retry outcomes share hashed operation correlation, and telemetry carries named
+  call-site phase durations. Consolidation cadence persists an independent successful-run timestamp,
+  including no-op and no-profile runs.
+- Focused runtime verification passed: `44 passed`.
+
+Verification:
+
+```text
+ruff check: All checks passed!
+ruff format --check: 354 files already formatted
+mypy src: Success: no issues found in 226 source files
+pytest: 570 passed, 2 warnings in 69.22s
+```
+
+The first full pytest collection exposed and removed a package-level managed-adapter import cycle.
+The two final warnings are the existing discord.py `audioop` and FastAPI/Starlette `httpx`
+deprecations.
+
+Automatic archive-cursor sweeping remains outside the live scheduler: the shared raw archive also
+contains planned-silent and fully failed turns, so processing it without Task 7's explicit backfill
+controls would violate the visible-success observation gate.
+
 ## Slice A repair 2 review round 2: complete structured membership
 
 ### RED
