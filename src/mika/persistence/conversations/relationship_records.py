@@ -79,6 +79,16 @@ class ClaimRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimTransitionRecord:
+    """One expected claim-state change produced by consolidation."""
+
+    claim_id: str
+    previous_state: str
+    next_state: str
+    transitioned_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ProfileVersionRecord:
     """One immutable rendered relationship-profile version."""
 

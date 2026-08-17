@@ -6,7 +6,7 @@ import json
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,11 +38,15 @@ from mika.persistence.conversations.relationship_models import (
     StoredRecallFeedback,
     StoredRecallFeedbackClaim,
 )
+from mika.persistence.conversations.relationship_publication import (
+    publish_consolidation as publish_consolidation_transaction,
+)
 from mika.persistence.conversations.relationship_records import (
     ArchiveCursor,
     ArchiveSourceRecord,
     ClaimEvidenceRecord,
     ClaimRecord,
+    ClaimTransitionRecord,
     ClaimWrite,
     EvidenceWrite,
     ProfileVersionRecord,
@@ -56,6 +60,8 @@ from mika.persistence.conversations.relationship_transitions import (
     validate_new_predecessor,
 )
 from mika.persistence.conversations.social_models import UserFact
+
+_CONSOLIDATION_READ_PAGE_SIZE = 500
 
 
 class RelationshipMemoryRepository:
@@ -173,34 +179,50 @@ class RelationshipMemoryRepository:
             for row in (await self._session.scalars(statement)).all()
         ]
 
-    async def claims_for_subject(
-        self, subject_user_id: str, *, limit: int = 1000
-    ) -> list[ClaimRecord]:
-        """Return bounded lifecycle history for one subject during consolidation."""
-        statement = (
-            select(StoredClaim)
-            .where(StoredClaim.subject_user_id == subject_user_id)
-            .order_by(StoredClaim.first_observed_at, StoredClaim.claim_id)
-            .limit(limit)
-        )
-        return [
-            await claim_record(self._session, row)
-            for row in (await self._session.scalars(statement)).all()
-        ]
+    async def claims_for_subject(self, subject_user_id: str) -> list[ClaimRecord]:
+        """Return complete lifecycle history for one subject during consolidation."""
+        rows: list[StoredClaim] = []
+        after: tuple[datetime, str] | None = None
+        while True:
+            filters = [StoredClaim.subject_user_id == subject_user_id]
+            if after is not None:
+                observed_at, claim_id = after
+                filters.append(
+                    or_(
+                        StoredClaim.first_observed_at > observed_at,
+                        and_(
+                            StoredClaim.first_observed_at == observed_at,
+                            StoredClaim.claim_id > claim_id,
+                        ),
+                    )
+                )
+            statement = (
+                select(StoredClaim)
+                .where(*filters)
+                .order_by(StoredClaim.first_observed_at, StoredClaim.claim_id)
+                .limit(_CONSOLIDATION_READ_PAGE_SIZE)
+            )
+            page = list((await self._session.scalars(statement)).all())
+            rows.extend(page)
+            if len(page) < _CONSOLIDATION_READ_PAGE_SIZE:
+                break
+            last = page[-1]
+            after = (last.first_observed_at, last.claim_id)
+        return [await claim_record(self._session, row) for row in rows]
 
     async def evidence_for_claims(self, claim_ids: Sequence[str]) -> list[ClaimEvidenceRecord]:
-        """Return bounded primitive evidence rows for the supplied claim identities."""
+        """Return complete primitive evidence rows for the supplied claim identities."""
         if not claim_ids:
             return []
-        statement = (
-            select(StoredClaimEvidence)
-            .where(StoredClaimEvidence.claim_id.in_(tuple(claim_ids)))
-            .order_by(
-                StoredClaimEvidence.source_timestamp,
-                StoredClaimEvidence.source_message_id,
-                StoredClaimEvidence.id,
+        unique_ids = tuple(dict.fromkeys(claim_ids))
+        rows: list[StoredClaimEvidence] = []
+        for start in range(0, len(unique_ids), _CONSOLIDATION_READ_PAGE_SIZE):
+            page_ids = unique_ids[start : start + _CONSOLIDATION_READ_PAGE_SIZE]
+            statement = select(StoredClaimEvidence).where(
+                StoredClaimEvidence.claim_id.in_(page_ids)
             )
-        )
+            rows.extend((await self._session.scalars(statement)).all())
+        rows.sort(key=lambda row: (row.source_timestamp, row.source_message_id, row.id))
         return [
             ClaimEvidenceRecord(
                 row.claim_id,
@@ -213,7 +235,7 @@ class RelationshipMemoryRepository:
                 row.channel_id,
                 row.policy_version_id,
             )
-            for row in (await self._session.scalars(statement)).all()
+            for row in rows
         ]
 
     async def write_profile_version(self, record: ProfileVersionRecord) -> None:
@@ -245,6 +267,14 @@ class RelationshipMemoryRepository:
         else:
             head.profile_version_id = record.profile_version_id
         await self._commit()
+
+    async def publish_consolidation(
+        self,
+        record: ProfileVersionRecord | None,
+        transitions: Sequence[ClaimTransitionRecord],
+    ) -> None:
+        """Publish profile and lifecycle changes in one transaction."""
+        await publish_consolidation_transaction(self._session, record, transitions)
 
     async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None:
         """Return the active immutable profile for one user."""

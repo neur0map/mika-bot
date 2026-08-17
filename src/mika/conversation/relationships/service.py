@@ -23,11 +23,13 @@ from mika.conversation.relationships.contracts import (
     RelationshipClaim,
 )
 from mika.conversation.relationships.extraction import EvidenceProposal
+from mika.conversation.relationships.profile import ProfileEntry, RelationshipProfile
 from mika.persistence.conversations.relationship_records import (
     ArchiveCursor,
     ArchiveSourceRecord,
     ClaimEvidenceRecord,
     ClaimRecord,
+    ClaimTransitionRecord,
     ClaimWrite,
     EvidenceWrite,
     ProfileVersionRecord,
@@ -120,14 +122,17 @@ class RelationshipRepository(Protocol):
     async def active_policy_version(self) -> RelationshipMemoryPolicyVersionRecord | None: ...
     async def add_evidence(self, claim: ClaimWrite, evidence: EvidenceWrite) -> ClaimRecord: ...
     async def activate_claim(self, claim_id: str, *, confirmed_at: datetime) -> ClaimRecord: ...
-    async def claims_for_subject(
-        self, subject_user_id: str, *, limit: int = 1000
-    ) -> Sequence[ClaimRecord]: ...
+    async def claims_for_subject(self, subject_user_id: str) -> Sequence[ClaimRecord]: ...
     async def evidence_for_claims(
         self, claim_ids: Sequence[str]
     ) -> Sequence[ClaimEvidenceRecord]: ...
     async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None: ...
     async def write_profile_version(self, record: ProfileVersionRecord) -> None: ...
+    async def publish_consolidation(
+        self,
+        record: ProfileVersionRecord | None,
+        transitions: Sequence[ClaimTransitionRecord],
+    ) -> None: ...
     async def record_recall(self, event: RecallEventWrite) -> None: ...
     async def cursor(self, source_name: str) -> ArchiveCursor | None: ...
     async def advance_cursor(self, cursor: ArchiveCursor) -> None: ...
@@ -249,13 +254,18 @@ class RelationshipMemoryService:
         evidence = tuple(
             await self._repository.evidence_for_claims([item.claim_id for item in records])
         )
+        active_profile = await self._repository.active_profile(subject_user_id)
         result = self._consolidator.consolidate(
             tuple(_relationship_claim(item) for item in records),
             evidence_by_claim_id=_evidence_by_claim(records, evidence),
+            predecessor=(
+                None if active_profile is None else _relationship_profile(active_profile, records)
+            ),
             now=self._clock(),
         )
-        await self._publish_activations(records, result)
-        return await self._publish_profile(subject_user_id, policy.policy_version_id, result)
+        return await self._publish_profile(
+            subject_user_id, policy.policy_version_id, records, result
+        )
 
     async def run_pending_observations(
         self, *, limit: int | None = None
@@ -328,37 +338,35 @@ class RelationshipMemoryService:
         await self._repository.activate_claim(claim_id, confirmed_at=observation.created_at)
         return int(stored.state != "active")
 
-    async def _publish_activations(
-        self, records: Sequence[ClaimRecord], result: ConsolidationResult
-    ) -> None:
-        prior = {item.claim_id: item.state for item in records}
-        for claim in result.claims:
-            if claim.state == "active" and prior.get(claim.claim_id) == "candidate":
-                await self._repository.activate_claim(claim.claim_id, confirmed_at=self._clock())
-
     async def _publish_profile(
-        self, subject_user_id: str, policy_version_id: str, result: ConsolidationResult
+        self,
+        subject_user_id: str,
+        policy_version_id: str,
+        records: Sequence[ClaimRecord],
+        result: ConsolidationResult,
     ) -> ConsolidationRun:
         profile = result.profile
-        if profile is None:
-            return ConsolidationRun(False, policy_version_id, candidate_count=len(result.claims))
         active = await self._repository.active_profile(subject_user_id)
-        if active is not None and (
-            active.index_text,
-            active.overview_text,
-        ) == (profile.index_text, profile.overview_text):
-            return ConsolidationRun(
-                False,
-                policy_version_id,
-                active.profile_version_id,
-                len(result.claims),
-                result.rejected,
+        unchanged = (
+            profile is not None
+            and active is not None
+            and (
+                active.index_text,
+                active.overview_text,
+                active.policy_version_id,
             )
-        version_id = _stable_id(
-            "profile", subject_user_id, policy_version_id, profile.index_text, profile.overview_text
+            == (profile.index_text, profile.overview_text, policy_version_id)
         )
-        await self._repository.write_profile_version(
-            ProfileVersionRecord(
+        record = None
+        if profile is not None and not unchanged:
+            version_id = _stable_id(
+                "profile",
+                subject_user_id,
+                policy_version_id,
+                profile.index_text,
+                profile.overview_text,
+            )
+            record = ProfileVersionRecord(
                 version_id,
                 subject_user_id,
                 profile.index_text,
@@ -368,9 +376,21 @@ class RelationshipMemoryService:
                 policy_version_id,
                 self._clock(),
             )
+        transitions = _claim_transitions(records, result.claims, self._clock())
+        await self._repository.publish_consolidation(record, transitions)
+        profile_version_id = (
+            record.profile_version_id
+            if record is not None
+            else None
+            if active is None
+            else active.profile_version_id
         )
         return ConsolidationRun(
-            True, policy_version_id, version_id, len(result.claims), result.rejected
+            record is not None,
+            policy_version_id,
+            profile_version_id,
+            len(result.claims),
+            result.rejected,
         )
 
 
@@ -430,6 +450,89 @@ def _relationship_claim(record: ClaimRecord) -> RelationshipClaim:
         cast(ClaimState, record.state),
         record.predecessor_claim_id,
     )
+
+
+def _claim_transitions(
+    records: Sequence[ClaimRecord],
+    claims: Sequence[RelationshipClaim],
+    transitioned_at: datetime,
+) -> tuple[ClaimTransitionRecord, ...]:
+    prior = {item.claim_id: item.state for item in records}
+    return tuple(
+        ClaimTransitionRecord(claim.claim_id, previous, claim.state, transitioned_at)
+        for claim in claims
+        if (previous := prior.get(claim.claim_id)) is not None and previous != claim.state
+    )
+
+
+def _relationship_profile(
+    record: ProfileVersionRecord, claims: Sequence[ClaimRecord]
+) -> RelationshipProfile:
+    grouped: dict[tuple[str, str, str], list[ClaimRecord]] = defaultdict(list)
+    for claim in claims:
+        if claim.last_confirmed_at is None or claim.last_confirmed_at > record.created_at:
+            continue
+        key = " ".join(claim.key.casefold().split())
+        value = " ".join(claim.value.split())
+        grouped[(_profile_layer(claim.kind, key), key, value)].append(claim)
+    overview = _overview_layers(record.overview_text)
+    available = {
+        (layer, f"{key}: {value}"): ProfileEntry(
+            key, value, tuple(sorted(item.claim_id for item in items))
+        )
+        for (layer, key, value), items in grouped.items()
+    }
+    entries: dict[str, list[ProfileEntry]] = defaultdict(list)
+    for layer, rendered_entries in overview.items():
+        for rendered in rendered_entries:
+            entry = available.get((layer, rendered))
+            if entry is None:
+                raise ValueError("active relationship profile cannot be mapped to source claims")
+            entries[layer].append(entry)
+    profile = RelationshipProfile(
+        subject_user_id=record.subject_user_id,
+        version=1,
+        posture=tuple(entries["posture"]),
+        expression=tuple(entries["expression"]),
+        interests=tuple(entries["interests"]),
+        care_patterns=tuple(entries["care_patterns"]),
+        conflict_repair=tuple(entries["conflict_repair"]),
+        anchors=tuple(entries["anchors"]),
+    )
+    return profile
+
+
+def _overview_layers(overview_text: str) -> Mapping[str, tuple[str, ...]]:
+    headings = {
+        "Posture": "posture",
+        "Expression": "expression",
+        "Interests": "interests",
+        "Care patterns": "care_patterns",
+        "Conflict and repair": "conflict_repair",
+        "Anchors": "anchors",
+    }
+    parsed: dict[str, tuple[str, ...]] = {}
+    for line in overview_text.splitlines():
+        heading, separator, content = line.partition(": ")
+        layer = headings.get(heading)
+        if not separator or layer is None:
+            raise ValueError("active relationship profile has an invalid overview")
+        parsed[layer] = tuple(content.split("; "))
+    return parsed
+
+
+def _profile_layer(kind: str, key: str) -> str:
+    if kind in {"boundary", "conflict", "repair"} or key.startswith("address:"):
+        return "conflict_repair"
+    if kind == "expression":
+        return "expression"
+    if kind == "preference":
+        return "interests"
+    if kind in {"care", "support"}:
+        return "care_patterns"
+    if kind in {"anchor", "event", "shared_moment"}:
+        return "anchors"
+    return "posture"
 
 
 def _proposal_from_record(record: ClaimEvidenceRecord, claim: ClaimRecord) -> EvidenceProposal:
