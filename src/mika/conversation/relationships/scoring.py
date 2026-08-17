@@ -201,12 +201,12 @@ def _semantic_scores(
         return (0.0,) * len(candidates)
     try:
         values = tuple(scorer.score(query, tuple(item.index_text for item in candidates)))
+        if len(values) != len(candidates):
+            return (0.0,) * len(candidates)
+        cap = max(0.0, weights.semantic_cap)
+        return tuple(min(cap, max(0.0, weights.semantic * _unit(value))) for value in values)
     except Exception:
         return (0.0,) * len(candidates)
-    if len(values) != len(candidates):
-        return (0.0,) * len(candidates)
-    cap = max(0.0, weights.semantic_cap)
-    return tuple(min(cap, max(0.0, weights.semantic * _unit(value))) for value in values)
 
 
 def _feedback_signals(

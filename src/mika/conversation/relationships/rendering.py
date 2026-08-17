@@ -10,6 +10,7 @@ from mika.conversation.relationships.contracts import RelationDecision
 
 _TIER_ORDER = ("index", "overview", "evidence")
 _SECTION_HEADER = "Relationship memory:"
+_ENTRY_PREFIX = "-"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +52,7 @@ class TieredMemoryRenderer:
             for item in anchors + others
             if item.candidate_id in selected
         ]
-        lines = [f"- {text}" for _, _, text, _ in ordered]
+        lines = [f"{_ENTRY_PREFIX} {text}" for _, _, text, _ in ordered]
         text = f"{_SECTION_HEADER}\n" + "\n".join(lines) if lines else ""
         tiers = {candidate.candidate_id: tier for candidate, tier, _, _ in ordered}
         total = header_cost + sum(cost for _, _, _, cost in ordered) if ordered else 0
@@ -97,8 +98,9 @@ class TieredMemoryRenderer:
             if reason:
                 reasons[candidate.candidate_id] = reason
                 continue
-            selected[candidate.candidate_id] = (candidate, "index", index_text, cost)
-            remaining -= cost
+            framed_cost = _framed_cost(index_text)
+            selected[candidate.candidate_id] = (candidate, "index", index_text, framed_cost)
+            remaining -= framed_cost
         return remaining
 
     def _deepen(
@@ -125,7 +127,7 @@ class TieredMemoryRenderer:
             return "empty_index"
         if cost > self._per_entry_cap:
             return "per_entry_cap:index"
-        if cost > remaining:
+        if _framed_cost(text) > remaining:
             return "token_budget:index"
         return ""
 
@@ -147,12 +149,13 @@ class TieredMemoryRenderer:
             if cost > self._per_entry_cap:
                 cap_blocked = True
                 continue
-            if cost > remaining:
+            framed_cost = _framed_cost(text)
+            if framed_cost > remaining:
                 continue
             if tier == desired:
-                return (tier, text, cost), ""
+                return (tier, text, framed_cost), ""
             constraint = "per_entry_cap" if cap_blocked else "token_budget"
-            return (tier, text, cost), f"{constraint}:{desired}->{tier}"
+            return (tier, text, framed_cost), f"{constraint}:{desired}->{tier}"
         constraint = "per_entry_cap" if cap_blocked else "token_budget"
         return None, f"{constraint}:{desired}"
 
@@ -178,11 +181,12 @@ class TieredMemoryRenderer:
             if cost > self._per_entry_cap:
                 constraint = "per_entry_cap"
                 continue
-            if cost - current[3] > remaining:
+            framed_cost = _framed_cost(text)
+            if framed_cost - current[3] > remaining:
                 constraint = "token_budget"
                 continue
             reason = f"{constraint}:{desired}->{tier}" if constraint else ""
-            return (candidate, tier, text, cost), reason
+            return (candidate, tier, text, framed_cost), reason
         reason = f"{constraint}:{desired}->{current[1]}" if constraint else ""
         return None, reason
 
@@ -190,6 +194,10 @@ class TieredMemoryRenderer:
 def estimate_tokens(text: str) -> int:
     """Return a deterministic conservative word-token estimate."""
     return len(text.split())
+
+
+def _framed_cost(text: str) -> int:
+    return estimate_tokens(f"{_ENTRY_PREFIX} {text}")
 
 
 def _desired_tier(candidate: MemoryCandidate, relation: RelationDecision) -> str:

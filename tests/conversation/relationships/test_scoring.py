@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from mika.conversation.context.contracts import MemoryCandidate, RetrievalScope
 from mika.conversation.relationships.scoring import (
@@ -186,6 +187,23 @@ def test_semantic_failure_has_deterministic_lexical_fallback() -> None:
         (item.candidate_id, item.score) for item in lexical.ranked
     ]
     assert all(item.score_components["semantic"] == 0 for item in fallback.ranked)
+
+
+def test_malformed_semantic_output_has_deterministic_lexical_fallback() -> None:
+    class MalformedSemantic:
+        def score(self, query: str, documents: tuple[str, ...]) -> tuple[float, ...]:
+            return cast(tuple[float, ...], ("not-a-number",))
+
+    candidate = _candidate("alpha", "launch checklist")
+    scorer = HybridMemoryScorer()
+
+    fallback = scorer.rank(
+        "launch", (candidate,), _SCOPE, now=_NOW, semantic_scorer=MalformedSemantic()
+    )
+    lexical = scorer.rank("launch", (candidate,), _SCOPE, now=_NOW)
+
+    assert fallback.ranked[0].score == lexical.ranked[0].score
+    assert fallback.ranked[0].score_components["semantic"] == 0
 
 
 def test_feedback_signal_requires_three_distinct_attributed_outcomes() -> None:

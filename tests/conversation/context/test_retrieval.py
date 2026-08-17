@@ -286,13 +286,13 @@ async def test_breadth_first_budget_fits_each_non_anchor_before_deepening() -> N
         source,
         relationship_source=RelationshipSource(),
         relationship_candidates=candidates,
-        token_budget=6,
+        token_budget=8,
         minimum_score=0.0,
     ).retrieve(_envelope("index"))
 
     assert recall.selected_ids == ("first", "second")
     assert recall.selected_tiers == {"first": "index", "second": "index"}
-    assert recall.estimated_token_cost == 6
+    assert recall.estimated_token_cost == 8
     assert "first index" in recall.text
     assert "second index" in recall.text
 
