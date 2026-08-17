@@ -42,11 +42,18 @@ observations into a stable profile. Lexical overlap also misses paraphrases when
 8. All local memory behavior works without an external vector service or second generative model.
 9. Optional semantic components must degrade to lexical retrieval without losing stored data.
 10. Private-channel evidence never becomes guild-wide social knowledge.
+11. Persistence depends only on primitive persistence records and never imports a conversation-layer
+    type, enum, or protocol.
 
 ## Relationship Profile
 
-Each Discord user receives one versioned relationship profile scoped to the installation. Guild and
-channel identifiers remain attached to evidence so retrieval can enforce visibility boundaries.
+Each Discord user receives one versioned relationship profile scoped to the installation. Every claim
+and every supporting evidence row carries a visibility kind (`direct_message`, `guild`, `channel`, or
+`global_explicit`), guild ID when applicable, channel ID when applicable, source kind, source message
+ID, and source timestamp. A `global_explicit` scope is permitted only for a non-sensitive fact the
+user stated explicitly and marked globally usable; it is never inferred from a DM or private channel.
+Guild and channel identifiers remain attached to evidence so retrieval can enforce visibility
+boundaries.
 
 The profile contains six independent layers inspired by `colleague-skill`:
 
@@ -114,6 +121,27 @@ Every relationship claim is represented independently from the rendered profile:
 - lifecycle state: `candidate`, `active`, `disputed`, `superseded`, or `expired`;
 - optional predecessor claim for corrections and revisions.
 
+## Persistence Boundary and Legacy Fact Migration
+
+`persistence/conversations` owns primitive, serialization-safe records such as `ClaimWrite`,
+`ClaimRecord`, `EvidenceWrite`, `ProfileVersionRecord`, `ArchiveCursor`, and `RecallEventWrite`.
+Their fields are strings, numbers, timestamps, and mappings of primitive values; enum values are
+stored and returned as validated strings. Persistence repositories accept and return only these
+records and never import `mika.conversation`.
+
+`conversation/relationships` owns domain enums, `RelationshipClaim`, relation decisions, extraction,
+and rendering. Its service layer maps domain values to and from the persistence records. This keeps
+the repository layer independent of conversation behavior while preserving typed domain APIs.
+
+Existing `conversation_user_facts` are migrated only when their source message can be resolved
+through the read-only archive adapter. The migration copies the source kind, Discord message ID,
+normalized UTC source timestamp, visibility kind, guild ID, and channel ID into relationship
+evidence. A fact whose source cannot be resolved remains a legacy fact and is excluded from new
+relationship retrieval and prompt injection; it is never silently treated as globally usable. The
+legacy fact table remains intact during rollout. When relationship retrieval is enabled, the
+affinity retriever must not render the old global `UserFact` section as an unfiltered fallback;
+migrated scoped claims are its replacement.
+
 Activation rules are deterministic:
 
 - explicit user statements may activate immediately at high confidence;
@@ -171,7 +199,8 @@ continues to reference the canonical local message/archive record.
 Retrieval operates in explicit stages:
 
 1. Determine relation and required memory types.
-2. Apply user, guild, channel, and privacy scope before scoring.
+2. Apply user, visibility kind, guild, channel, and source-availability scope before scoring. Claims
+   with unresolved legacy scope are rejected before scoring.
 3. Collect exact facts, active relationship claims, recent messages, and historical candidates.
 4. Score lexical overlap, optional semantic similarity, person affinity, channel affinity, recency,
    evidence confidence, and correction priority.
@@ -190,8 +219,17 @@ estimated token cost, latency, and retrieval version. They do not duplicate mess
 ## Extraction and Consolidation
 
 Visible replies persist first. A bounded background observation job then considers the completed
-turn for candidate evidence. Extraction processes only messages not previously observed, using a
-durable cursor based on timestamp plus message ID.
+turn for candidate evidence only after the Discord executor reports at least one visible success
+(reply, reaction, or media). Planned silence and fully failed action plans do not enqueue derived
+relationship writes. Extraction processes only source messages not previously observed.
+
+Archive backfill uses a dedicated read-only adapter over the optional shared archive. The adapter
+opens the SQLite database in read-only mode, never creates or mutates archive tables, and returns a
+primitive source record with normalized UTC `created_at`, `discord_message_id`, author, text, guild,
+channel, and visibility metadata. The durable archive cursor is the ordered pair
+`(archive_created_at, discord_message_id)` for one named archive source; queries use the same pair
+for strict continuation. Rows without a valid timestamp or Discord message ID are skipped and
+reported as degraded input rather than assigned an invented ordering.
 
 Deterministic extractors handle measurable expression features, explicit correction phrases,
 reaction feedback, and known fact forms. A provider-backed structured extractor may propose richer
@@ -237,7 +275,8 @@ retention policy.
 
 Direct-message evidence is scoped to that person and DM context. Private-channel evidence cannot be
 used in public channels unless it represents an explicit, non-sensitive user fact marked as globally
-usable. Other users' profiles are never injected merely because they share a channel.
+usable. Other users' profiles are never injected merely because they share a channel. Existing
+unscoped legacy facts do not bypass these checks.
 
 The dashboard and CLI show counts, versions, last consolidation time, failure status, and source IDs.
 They do not display private message text in aggregate operational views.
@@ -272,7 +311,11 @@ Unit and integration tests cover scoping, activation thresholds, contradiction p
 correction precedence, version rollback, cursor idempotency, timeout fallbacks, token budgeting,
 deduplication, and deletion.
 
-The memory benchmark uses held-out conversations and measures:
+The memory benchmark uses held-out, stateful multi-turn conversations. It replays every turn in
+chronological order through an isolated temporary relationship store with deterministic timestamps,
+feeding only visible inputs to the responder and applying hidden expectations only after the replay.
+This is required to measure claim activation, next-turn correction adoption, contradictions, and
+cursor behavior without exposing expected answers to generation. It measures:
 
 - explicit fact recall precision and recall;
 - correct-person attribution;

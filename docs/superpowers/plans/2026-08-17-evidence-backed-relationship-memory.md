@@ -15,6 +15,10 @@
 - Private-channel evidence never becomes guild-wide social knowledge.
 - Visible replies must not wait for background extraction or consolidation.
 - Local memory must work without Honcho, embeddings, or a second model.
+- Persistence must not import `mika.conversation`; conversation services map domain objects to
+  primitive persistence records.
+- Claims and evidence carry visibility kind, guild/channel scope, source kind, source message ID,
+  and source timestamp. Unresolved legacy facts are never prompt-injected.
 - Copy/adapt MIT material only with notices; do not copy AGPL implementation or prompt text.
 - New Python files stay under 300 lines where practical and never exceed 500 lines.
 - Every behavior change follows a witnessed red-green test cycle.
@@ -48,19 +52,31 @@
 **Files:**
 - Create: `src/mika/persistence/conversations/relationship_models.py`
 - Create: `src/mika/persistence/conversations/relationship_memory.py`
+- Create: `src/mika/persistence/conversations/relationship_records.py`
+- Create: `src/mika/persistence/conversations/archive_reader.py`
 - Modify: `src/mika/persistence/models/__init__.py`
 - Modify: `src/mika/persistence/conversations/__init__.py`
 - Create: `tests/persistence/conversations/test_relationship_memory.py`
 
 **Interfaces:**
-- Consumes enums and claim contracts from Task 1.
-- Produces `RelationshipMemoryRepository` methods: `add_evidence`, `activate_claim`, `supersede_claim`, `claims_for_user`, `write_profile_version`, `active_profile`, `advance_cursor`, `cursor`, `record_recall`, and `delete_user_memory`.
+- Defines persistence-owned primitive DTOs: `ClaimWrite`, `ClaimRecord`, `EvidenceWrite`,
+  `ProfileVersionRecord`, `ArchiveCursor`, `RecallEventWrite`, and `ArchiveSourceRecord`. Their
+  values are primitives and persisted enum values are strings.
+- `RelationshipMemoryRepository` accepts and returns only those DTOs; it must never import
+  `mika.conversation`. `conversation/relationships/service.py` maps Task 1 domain contracts to and
+  from the DTOs.
+- Produces repository methods: `add_evidence`, `activate_claim`, `supersede_claim`,
+  `claims_for_user`, `write_profile_version`, `active_profile`, `advance_cursor`, `cursor`,
+  `record_recall`, `delete_user_memory`, and `migrate_resolved_legacy_facts`.
+- `ArchiveReader.iter_after(cursor: ArchiveCursor | None, limit: int)` opens the configured shared
+  archive read-only and returns `ArchiveSourceRecord` values ordered strictly by
+  `(archive_created_at, discord_message_id)`.
 
-- [ ] **Step 1: Write failing repository tests** using the real temporary SQLite engine. Cover source deduplication, correction supersession, immutable profile versions, compound cursor ordering `(created_at, message_id)`, scoped claims, recall trace metadata, and complete derived-memory deletion.
+- [ ] **Step 1: Write failing repository and archive-reader tests** using the real temporary SQLite engine. Cover source deduplication, correction supersession, immutable profile versions, compound archive cursor ordering `(archive_created_at, discord_message_id)`, read-only archive access, scoped claims, recall trace metadata, and complete derived-memory deletion. Add migration cases that copy guild/channel/source visibility only when `conversation_user_facts.source_message_id` resolves to a valid archive source; assert unresolved legacy facts are excluded from relationship recall.
 - [ ] **Step 2: Run the focused persistence test** and verify missing models/repository failure.
-- [ ] **Step 3: Implement normalized ORM tables** for claims, claim evidence, profile versions, observation cursors, and recall events. Store source IDs and metadata, never copied transcripts.
-- [ ] **Step 4: Implement transactional repository operations.** Correction supersession and new profile activation must be atomic. Duplicate evidence for one source must not increase observation count.
-- [ ] **Step 5: Run focused tests and `uv run mypy src/mika/persistence/conversations`.** Both must pass.
+- [ ] **Step 3: Implement normalized ORM tables and primitive DTOs** for claims, claim evidence, profile versions, observation cursors, and recall events. Store visibility kind, guild ID, channel ID, source kind, source ID, and normalized source timestamp with every evidence row; never copy transcripts. Register every new ORM model through `persistence/models/__init__.py` so `init_db()` creates the tables.
+- [ ] **Step 4: Implement the read-only archive adapter and transactional repository operations.** The adapter uses SQLite read-only mode, validates UTC timestamp plus Discord message ID before yielding a row, and never advances a cursor itself. Correction supersession and new profile activation must be atomic. Duplicate evidence for one source must not increase observation count.
+- [ ] **Step 5: Run focused tests and `uv run mypy src/mika/persistence/conversations`.** Verify no persistence module imports `mika.conversation`; both checks must pass.
 - [ ] **Step 6: Commit** with `feat(memory): persist relationship evidence`.
 
 ### Task 3: Evidence extraction and activation policy
@@ -97,11 +113,11 @@
 - Produces ranked `MemoryCandidate` values, bounded rendered context, selected/rejected IDs, rejection reasons, latency, and token estimates.
 
 - [ ] **Step 1: Write failing scoring tests** for person and channel scope, correction priority, confidence, recency, lexical overlap, semantic contribution, duplicate diversity, and deterministic lexical fallback.
-- [ ] **Step 2: Write failing retrieval integration tests** proving correct-person attribution, no DM-to-public leakage, irrelevant rejection, strict budget ordering, and Honcho-independent recall.
+- [ ] **Step 2: Write failing retrieval integration tests** proving correct-person attribution, no DM-to-public leakage, legacy-unscoped-fact rejection, irrelevant rejection, strict budget ordering, and Honcho-independent recall.
 - [ ] **Step 3: Run focused tests** and verify behavioral failures against the existing lexical retriever.
 - [ ] **Step 4: Implement index/overview/evidence candidates** and an inspectable weighted scorer. Scope candidates before scoring and cap semantic influence.
 - [ ] **Step 5: Implement bounded rendering** that prioritizes corrections, explicit facts, relationship overview, then historical messages. Record why each dropped candidate was rejected.
-- [ ] **Step 6: Integrate with `AffinityRetriever`** while retaining its public protocol and fail-open behavior.
+- [ ] **Step 6: Integrate with `AffinityRetriever`** while retaining its public protocol and fail-open behavior. When relationship retrieval is enabled, replace the existing unscoped `UserFact` prompt section with migrated scoped relationship claims; never merge legacy global facts as a fallback.
 - [ ] **Step 7: Run focused tests and commit** with `feat(memory): add tiered hybrid relationship recall`.
 
 ### Task 5: Profile consolidation and rollback
@@ -127,7 +143,9 @@
 - Create: `src/mika/conversation/relationships/service.py`
 - Create: `src/mika/ai/learning/reflection/relationship_job.py`
 - Modify: `src/mika/conversation/engine.py`
-- Modify: `src/mika/conversation/observer.py`
+- Modify: `src/mika/conversation/context/observer.py`
+- Modify: `src/mika/bot/client.py`
+- Modify: `src/mika/bot/scheduler.py`
 - Modify: `src/mika/ai/llm/client.py`
 - Modify: `src/mika/core/config.py`
 - Create: `tests/conversation/relationships/test_service.py`
@@ -136,11 +154,15 @@
 **Interfaces:**
 - Consumes repository, extractor, activation policy, classifier, retriever, and consolidator.
 - Produces `RelationshipMemoryService.observe_turn`, `recall`, `consolidate_user`, and `run_pending_observations`.
+- `ConversationEngine.observe` calls the service only after the executor has a visible success
+  (reply, reaction, or media); local recent-history persistence retains its existing behavior.
+- `BotApp` composes the service, `start_schedulers` starts the bounded job after Discord readiness,
+  and `BotApp.close` cancels/awaits the job before shutdown.
 
-- [ ] **Step 1: Write failing service tests** proving visible generation completes before observation, cursor retries are idempotent, failed extraction leaves the cursor unchanged, corrections can affect the next applicable turn, and disabled learning performs no derived writes.
+- [ ] **Step 1: Write failing service tests** proving visible generation completes before observation, cursor retries are idempotent, failed extraction leaves the cursor unchanged, corrections can affect the next applicable turn, disabled learning performs no derived writes, and planned silence plus fully failed plans enqueue no relationship observation while reply-only, reaction-only, and media-only successes do.
 - [ ] **Step 2: Write failing engine integration tests** proving relation and relationship overview reach generation while extraction failures fail open.
 - [ ] **Step 3: Run focused tests** and verify failures against the current engine.
-- [ ] **Step 4: Implement the orchestration service** with dependency injection and bounded background batches. Persist messages first and submit observation only after successful Discord execution.
+- [ ] **Step 4: Implement the orchestration service and lifecycle wiring** with dependency injection and bounded background batches. `ConversationEngine.observe` persists the existing local turn first, then submits relationship observation only after successful visible Discord execution. Wire `relationship_job.py` through `bot/scheduler.py`, retain its task/loop for shutdown, expose failures without advancing the cursor, and never block the visible action path.
 - [ ] **Step 5: Integrate recall into context selection and generation.** Merge local and Honcho context with deduplication; keep existing fallbacks.
 - [ ] **Step 6: Add settings** for relationship learning, provider extraction, semantic scoring, shadow mode, batch size, and consolidation interval.
 - [ ] **Step 7: Run focused tests and commit** with `feat(memory): integrate relationship learning`.
@@ -156,13 +178,13 @@
 - Create: `tests/web/test_relationship_memory_overview.py`
 
 **Interfaces:**
-- Consumes `RelationshipMemoryService` and durable archive cursor.
+- Consumes `RelationshipMemoryService`, `ArchiveReader`, and a durable archive cursor.
 - Produces CLI operations for status, bounded backfill, consolidate, inspect metadata, and delete-user-derived-memory; overview exposes counts and health without message text.
 
-- [ ] **Step 1: Write failing CLI tests** for dry-run/status, resumable bounded backfill, cursor continuation, deletion confirmation, and no raw content in status output.
+- [ ] **Step 1: Write failing CLI tests** for dry-run/status, resumable bounded backfill, strict continuation from `(archive_created_at, discord_message_id)`, deletion confirmation, archive-unavailable/degraded reporting, and no raw content in status output.
 - [ ] **Step 2: Write failing web tests** for claim/profile counts, last consolidation, and degraded-state reporting without private text.
 - [ ] **Step 3: Run focused tests** and verify missing command/fields.
-- [ ] **Step 4: Implement commands and overview data** using service/repository APIs. Backfill creates candidates only; it never auto-activates inferred claims.
+- [ ] **Step 4: Implement commands and overview data** using service/repository APIs and the read-only archive adapter. Backfill creates candidates only; it never auto-activates inferred claims, never writes to the archive, and advances the named archive cursor only after the corresponding relationship transaction commits. Make the overview snapshot async before it queries aggregate relationship status.
 - [ ] **Step 5: Run focused tests and commit** with `feat(memory): operate relationship memory`.
 
 ### Task 8: Held-out benchmark, documentation, and production rollout
@@ -170,6 +192,7 @@
 **Files:**
 - Create: `src/mika/conversation/evaluation/relationship_memory.py`
 - Create: `tests/conversation/evaluation/test_relationship_memory_benchmark.py`
+- Create: `tests/fixtures/relationship_memory_benchmark_v1.json`
 - Create: `tools/run_relationship_memory_benchmark.py`
 - Modify: `docs/HONCHO-MEMORY.md`
 - Modify: `docs/GETTING-STARTED.md`
@@ -178,10 +201,11 @@
 
 **Interfaces:**
 - Produces deterministic benchmark cases and JSON results for fact recall, attribution, relation accuracy, correction adoption, contradiction handling, irrelevant rejection, leakage, duplicates, latency, and prompt cost.
+- Replays every held-out case turn chronologically through an isolated temporary relationship store with deterministic timestamps. Hidden expectations are available only to post-replay scoring, never to generation or retrieval.
 
-- [ ] **Step 1: Write failing evaluator tests** with literal expected metrics and thresholds, including a mandatory zero private-leakage gate.
+- [ ] **Step 1: Write failing evaluator tests and a multi-turn fixture** with literal expected metrics and thresholds, including a mandatory zero private-leakage gate. Include a correction whose replacement is tested on the next turn, a contradiction, a DM/public isolation pair, and archive-cursor continuation; assert that the responder never receives hidden expectations.
 - [ ] **Step 2: Run the focused test** and verify missing evaluator failure.
-- [ ] **Step 3: Implement evaluator and CLI runner** supporting lexical-only, local-hybrid, and local-plus-Honcho modes without exposing expected answers to generation.
+- [ ] **Step 3: Implement stateful evaluator and CLI runner** supporting lexical-only, local-hybrid, and local-plus-Honcho modes without exposing expected answers to generation. Do not reuse the single-final-turn `evaluation.runner.run_cases` flow for relationship metrics; replay and observe each chronological turn before scoring the case.
 - [ ] **Step 4: Run the held-out benchmark** against the current baseline and candidate. Require no recall-quality regression, zero leakage, correction adoption at or above 95%, correct-person attribution at or above 98%, and p95 local retrieval below 100 ms.
 - [ ] **Step 5: Run `make check`** and require all lint, format, type, and test gates to pass.
 - [ ] **Step 6: Run `prowl-agent changed` and `prowl-agent doctor`** and inspect unresolved references and blast radius.
@@ -197,3 +221,5 @@
 - Types passed between tasks use stable names declared in each interface block.
 - Every production behavior has a failing-test step before implementation.
 - Privacy, attribution, rollback, and benchmark gates are explicit rather than implied.
+- Persistence DTOs, archive source ordering, runtime scheduler wiring, legacy fact scope migration, and
+  stateful benchmark replay are explicit before implementation.
