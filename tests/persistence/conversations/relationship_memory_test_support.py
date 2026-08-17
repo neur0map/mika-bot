@@ -6,7 +6,12 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from mika.persistence.base import Base
 from mika.persistence.conversations.relationship_memory import RelationshipMemoryRepository
@@ -28,6 +33,11 @@ async def repository(path: Path) -> tuple[RelationshipMemoryRepository, AsyncEng
         await connection.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     return RelationshipMemoryRepository(factory()), engine
+
+
+def inspection_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Create independent sessions for inspecting or seeding persistence state."""
+    return async_sessionmaker(engine, expire_on_commit=False)
 
 
 def policy(version_id: str = "policy-1") -> RelationshipMemoryPolicyVersionRecord:

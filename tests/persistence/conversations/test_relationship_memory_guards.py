@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -12,6 +14,8 @@ from tests.persistence.conversations.relationship_memory_test_support import (
     claim,
     evidence,
     policy,
+    profile,
+    recall_event,
     repository,
 )
 
@@ -152,3 +156,79 @@ async def test_cursor_uses_numeric_discord_id_order_and_rejects_invalid_ids(tmp_
     finally:
         await memory.close()
         await engine.dispose()
+
+
+async def test_every_derived_write_rejects_a_missing_policy_version(tmp_path: Path) -> None:
+    memory, engine = await repository(tmp_path / "memory.db")
+    try:
+        with pytest.raises(ValueError, match="policy version does not exist"):
+            await memory.add_evidence(claim("claim-1"), evidence("source-1"))
+        with pytest.raises(ValueError, match="policy version does not exist"):
+            await memory.write_profile_version(profile("profile-1", "overview"))
+        with pytest.raises(ValueError, match="policy version does not exist"):
+            await memory.advance_cursor(ArchiveCursor("weekly", NOW, "1", "policy-1", NOW))
+        with pytest.raises(ValueError, match="policy version does not exist"):
+            await memory.record_recall(recall_event())
+
+        assert await memory.claim("claim-1") is None
+        assert await memory.active_profile("user-1") is None
+        assert await memory.cursor("weekly") is None
+    finally:
+        await memory.close()
+        await engine.dispose()
+
+
+async def test_supersession_rejects_a_missing_policy_without_mutating_claims(
+    tmp_path: Path,
+) -> None:
+    memory, engine = await repository(tmp_path / "memory.db")
+    try:
+        await memory.write_policy_version(policy())
+        await memory.add_evidence(claim("old"), evidence("source-1"))
+        await memory.activate_claim("old", confirmed_at=NOW)
+        replacement = claim(
+            "new",
+            value="Celeste",
+            evidence_class="correction",
+            state="active",
+            predecessor_claim_id="old",
+        )
+
+        with pytest.raises(ValueError, match="policy version does not exist"):
+            await memory.supersede_claim(
+                "old",
+                replacement,
+                replace(evidence("source-2"), policy_version_id="missing"),
+                superseded_at=NOW,
+            )
+
+        current = await memory.claim("old")
+        assert current is not None and current.state == "active"
+        assert await memory.claim("new") is None
+    finally:
+        await memory.close()
+        await engine.dispose()
+
+
+async def test_repository_does_not_expose_its_owned_session(tmp_path: Path) -> None:
+    memory, engine = await repository(tmp_path / "memory.db")
+    try:
+        assert not hasattr(memory, "session")
+    finally:
+        await memory.close()
+        await engine.dispose()
+
+
+def test_persistence_package_import_does_not_load_conversation_layer() -> None:
+    script = (
+        "import sys; import mika.persistence.conversations; "
+        "print([name for name in sys.modules if name.startswith('mika.conversation')])"
+    )
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "[]"

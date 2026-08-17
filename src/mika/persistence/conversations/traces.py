@@ -4,15 +4,50 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from mika.conversation.contracts import TurnTrace
 from mika.persistence.conversations.models import StoredStageTrace, StoredTurnTrace
 
 _SENSITIVE_KEYS = frozenset({"token", "authorization", "secret", "content", "raw_text"})
+
+
+class TraceStageRecord(Protocol):
+    """Persistence-facing fields for one diagnostic stage."""
+
+    @property
+    def stage(self) -> str: ...
+
+    @property
+    def outcome(self) -> str: ...
+
+    @property
+    def reason(self) -> str | None: ...
+
+    @property
+    def duration_ms(self) -> float: ...
+
+    @property
+    def details(self) -> Mapping[str, object]: ...
+
+
+class TurnTraceRecord(Protocol):
+    """Persistence-facing fields for one ordered diagnostic trace."""
+
+    @property
+    def trace_id(self) -> str: ...
+
+    @property
+    def message_id(self) -> str: ...
+
+    @property
+    def channel_id(self) -> str: ...
+
+    @property
+    def stages(self) -> Sequence[TraceStageRecord]: ...
 
 
 def _reject_sensitive_keys(value: object) -> None:
@@ -32,7 +67,7 @@ class TurnTraceRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def add(self, trace: TurnTrace) -> None:
+    async def add(self, trace: TurnTraceRecord) -> None:
         """Persist a trace after rejecting sensitive diagnostic fields."""
         stages: list[StoredStageTrace] = []
         for position, stage in enumerate(trace.stages):

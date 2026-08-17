@@ -23,6 +23,9 @@ from tests.persistence.conversations.relationship_memory_test_support import (
     evidence as _evidence,
 )
 from tests.persistence.conversations.relationship_memory_test_support import (
+    inspection_factory as _inspection_factory,
+)
+from tests.persistence.conversations.relationship_memory_test_support import (
     policy as _policy,
 )
 from tests.persistence.conversations.relationship_memory_test_support import (
@@ -140,13 +143,16 @@ async def test_profile_and_policy_versions_are_immutable_with_atomic_heads(tmp_p
             await repository.write_policy_version(_policy())
         assert (await repository.active_policy_version()) == _policy("policy-2")
 
-        versions = list(
-            (
-                await repository.session.execute(
-                    select(StoredProfileVersion).order_by(StoredProfileVersion.profile_version_id)
-                )
-            ).scalars()
-        )
+        async with _inspection_factory(engine)() as inspection:
+            versions = list(
+                (
+                    await inspection.execute(
+                        select(StoredProfileVersion).order_by(
+                            StoredProfileVersion.profile_version_id
+                        )
+                    )
+                ).scalars()
+            )
         assert [(item.profile_version_id, item.overview_text) for item in versions] == [
             ("profile-1", "first overview"),
             ("profile-2", "second overview"),
@@ -159,6 +165,7 @@ async def test_profile_and_policy_versions_are_immutable_with_atomic_heads(tmp_p
 async def test_archive_cursor_uses_compound_monotonic_order(tmp_path: Path) -> None:
     repository, engine = await _repository(tmp_path / "memory.db")
     try:
+        await repository.write_policy_version(_policy())
         first = ArchiveCursor("weekly", NOW, "100", "policy-1", NOW)
         second = ArchiveCursor("weekly", NOW, "101", "policy-1", NOW + timedelta(minutes=1))
         stale = ArchiveCursor(
@@ -267,12 +274,11 @@ async def test_recall_feedback_is_idempotent_and_cannot_mutate_claim_truth(tmp_p
             before.state,
             before.predecessor_claim_id,
         )
-        feedback_count = await repository.session.scalar(
-            select(func.count(StoredRecallFeedback.id))
-        )
-        link_count = await repository.session.scalar(
-            select(func.count()).select_from(StoredRecallFeedbackClaim)
-        )
+        async with _inspection_factory(engine)() as inspection:
+            feedback_count = await inspection.scalar(select(func.count(StoredRecallFeedback.id)))
+            link_count = await inspection.scalar(
+                select(func.count()).select_from(StoredRecallFeedbackClaim)
+            )
         assert feedback_count == 1
         assert link_count == 1
 
@@ -314,11 +320,12 @@ async def test_recall_trace_stores_metadata_without_transcript_text(tmp_path: Pa
         )
         await repository.record_recall(event)
 
-        stored = (
-            await repository.session.execute(
-                select(StoredRecallEvent).where(StoredRecallEvent.recall_event_id == "recall-1")
-            )
-        ).scalar_one()
+        async with _inspection_factory(engine)() as inspection:
+            stored = (
+                await inspection.execute(
+                    select(StoredRecallEvent).where(StoredRecallEvent.recall_event_id == "recall-1")
+                )
+            ).scalar_one()
         assert json.loads(stored.candidate_ids_json) == ["claim-1", "claim-2"]
         assert json.loads(stored.selected_tiers_json) == {"claim-1": "index"}
         assert stored.policy_version_id == "policy-1"
@@ -342,34 +349,33 @@ async def test_deleting_user_memory_removes_all_derived_rows_only(tmp_path: Path
         await repository.record_recall_feedback(
             RecallFeedbackWrite("feedback-1", "recall-1", "positive", ("claim-1",), NOW)
         )
-        repository.session.add(
-            UserFact(
-                user_id="user-1",
-                fact_key="legacy",
-                fact_value="preserve",
-                source_message_id="missing",
+        async with _inspection_factory(engine)() as inspection:
+            inspection.add(
+                UserFact(
+                    user_id="user-1",
+                    fact_key="legacy",
+                    fact_value="preserve",
+                    source_message_id="missing",
+                )
             )
-        )
-        await repository.session.commit()
+            await inspection.commit()
 
         await repository.delete_user_memory("user-1")
 
         assert await repository.claim("claim-1") is None
         assert await repository.active_profile("user-1") is None
-        assert (
-            await repository.session.scalar(select(func.count(StoredRecallEvent.recall_event_id)))
-            == 0
-        )
-        assert await repository.session.scalar(select(func.count(StoredRecallFeedback.id))) == 0
-        assert (
-            await repository.session.scalar(
-                select(func.count()).select_from(StoredRecallFeedbackClaim)
+        async with _inspection_factory(engine)() as inspection:
+            assert (
+                await inspection.scalar(select(func.count(StoredRecallEvent.recall_event_id))) == 0
             )
-            == 0
-        )
+            assert await inspection.scalar(select(func.count(StoredRecallFeedback.id))) == 0
+            assert (
+                await inspection.scalar(select(func.count()).select_from(StoredRecallFeedbackClaim))
+                == 0
+            )
+            assert await inspection.scalar(select(func.count(UserFact.id))) == 1
         assert await repository.active_policy_version() == _policy()
         assert await repository.cursor("weekly") is not None
-        assert await repository.session.scalar(select(func.count(UserFact.id))) == 1
     finally:
         await repository.close()
         await engine.dispose()
@@ -379,23 +385,24 @@ async def test_legacy_migration_requires_resolved_scoped_archive_source(tmp_path
     repository, engine = await _repository(tmp_path / "memory.db")
     try:
         await repository.write_policy_version(_policy())
-        repository.session.add_all(
-            [
-                UserFact(
-                    user_id="user-1",
-                    fact_key="favorite_game",
-                    fact_value="Hades",
-                    source_message_id="100",
-                ),
-                UserFact(
-                    user_id="user-1",
-                    fact_key="home_city",
-                    fact_value="unknown scope",
-                    source_message_id="missing",
-                ),
-            ]
-        )
-        await repository.session.commit()
+        async with _inspection_factory(engine)() as inspection:
+            inspection.add_all(
+                [
+                    UserFact(
+                        user_id="user-1",
+                        fact_key="favorite_game",
+                        fact_value="Hades",
+                        source_message_id="100",
+                    ),
+                    UserFact(
+                        user_id="user-1",
+                        fact_key="home_city",
+                        fact_value="unknown scope",
+                        source_message_id="missing",
+                    ),
+                ]
+            )
+            await inspection.commit()
         source = ArchiveSourceRecord(
             source_kind="shared_archive",
             source_id="archive-row-1",
@@ -430,7 +437,8 @@ async def test_legacy_migration_requires_resolved_scoped_archive_source(tmp_path
         )
         assert [(claim.key, claim.value) for claim in visible] == [("favorite_game", "Hades")]
         assert hidden == []
-        evidence = (await repository.session.execute(select(StoredClaimEvidence))).scalar_one()
+        async with _inspection_factory(engine)() as inspection:
+            evidence = (await inspection.execute(select(StoredClaimEvidence))).scalar_one()
         assert (
             evidence.source_kind,
             evidence.source_id,

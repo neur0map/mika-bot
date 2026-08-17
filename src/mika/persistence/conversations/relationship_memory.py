@@ -63,11 +63,6 @@ class RelationshipMemoryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    @property
-    def session(self) -> AsyncSession:
-        """Expose the owned session for aggregate persistence queries."""
-        return self._session
-
     async def close(self) -> None:
         """Close the repository's database session."""
         await self._session.close()
@@ -79,6 +74,7 @@ class RelationshipMemoryRepository:
         except ValueError:
             await self._session.rollback()
             raise
+        await self._require_policy_version(evidence.policy_version_id)
         stored = await self._session.get(StoredClaim, claim.claim_id)
         if stored is None:
             await validate_new_predecessor(self._session, claim)
@@ -120,6 +116,7 @@ class RelationshipMemoryRepository:
         if await self._session.get(StoredClaim, replacement.claim_id) is not None:
             await self._session.rollback()
             raise ValueError("replacement claim already exists")
+        await self._require_policy_version(evidence.policy_version_id)
         await transition_replacement(
             self._session, previous, replacement, evidence, superseded_at=superseded_at
         )
@@ -180,6 +177,7 @@ class RelationshipMemoryRepository:
         if await self._session.get(StoredProfileVersion, record.profile_version_id) is not None:
             await self._session.rollback()
             raise ValueError("profile version already exists")
+        await self._require_policy_version(record.policy_version_id)
         self._session.add(
             StoredProfileVersion(
                 profile_version_id=record.profile_version_id,
@@ -255,6 +253,7 @@ class RelationshipMemoryRepository:
     async def advance_cursor(self, cursor: ArchiveCursor) -> None:
         """Advance one archive cursor without permitting regression."""
         message_id = normalize_discord_message_id(cursor.discord_message_id)
+        await self._require_policy_version(cursor.policy_version_id)
         stored = await self._session.get(StoredArchiveCursor, cursor.source_name)
         incoming_key = (as_utc(cursor.archive_created_at), int(message_id))
         if stored is not None:
@@ -293,6 +292,7 @@ class RelationshipMemoryRepository:
 
     async def record_recall(self, event: RecallEventWrite) -> None:
         """Persist one content-free recall trace idempotently."""
+        await self._require_policy_version(event.policy_version_id)
         stored = await self._session.get(StoredRecallEvent, event.recall_event_id)
         values = recall_values(event)
         if stored is not None:
@@ -482,6 +482,11 @@ class RelationshipMemoryRepository:
             await self._session.rollback()
             raise ValueError("claim does not exist")
         return stored
+
+    async def _require_policy_version(self, policy_version_id: str) -> None:
+        if await self._session.get(StoredPolicyVersion, policy_version_id) is None:
+            await self._session.rollback()
+            raise ValueError("policy version does not exist")
 
     async def _commit(self) -> None:
         try:
