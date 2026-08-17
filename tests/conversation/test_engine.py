@@ -29,6 +29,7 @@ class Memory:
 class Generator:
     def __init__(self) -> None:
         self.tool_names: tuple[str, ...] = ()
+        self.observed: list[tuple[str, str, tuple[str, ...]]] = []
 
     async def generate(
         self,
@@ -39,6 +40,9 @@ class Generator:
     ) -> MikaTurn:
         self.tool_names = tools.names
         return MikaTurn(reply="sunny and 22°", intent="answer", confidence=0.9)
+
+    def observe_expression(self, channel_id: str, reply: str, reactions: tuple[str, ...]) -> None:
+        self.observed.append((channel_id, reply, reactions))
 
 
 class Traces:
@@ -78,6 +82,7 @@ async def test_engine_runs_stages_and_observes_only_visible_reply() -> None:
 
     assert plan.reply == "sunny and 22°"
     assert generator.tool_names == ("web_search",)
+    assert generator.observed == [("2", "sunny and 22°", ())]
     assert memory.remembered == [
         ("user", "Mika, what's the weather today?"),
         ("assistant", "sunny and 22°"),
@@ -116,4 +121,5 @@ async def test_engine_skips_generation_when_observing() -> None:
 
     assert plan.is_silent
     assert generator.tool_names == ()
+    assert generator.observed == []
     assert memory.remembered == [("user", "send me the address")]

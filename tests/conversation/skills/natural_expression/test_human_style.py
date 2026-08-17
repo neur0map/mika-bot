@@ -1,9 +1,12 @@
 """Aggregate human-style analysis and bounded profile blending."""
 
+import sqlite3
+
 from mika.conversation.skills.natural_expression.human_style import (
     HumanStyleProfile,
     analyze_messages,
     blend_profiles,
+    load_archive_profiles,
 )
 
 
@@ -36,3 +39,21 @@ def test_small_person_sample_does_not_change_server_profile() -> None:
     person = HumanStyleProfile(3, 20, 1.0, 1.0, 1.0, 0.0, 1.0)
 
     assert blend_profiles(server, None, person) == server
+
+
+def test_archive_loader_keeps_only_aggregate_profiles(tmp_path) -> None:
+    path = tmp_path / "archive.sqlite"
+    con = sqlite3.connect(path)
+    con.execute("create table messages (role text, content text, channel_id text, author_id text)")
+    con.executemany(
+        "insert into messages values ('user', ?, ?, ?)",
+        [("hi", "c1", "u1"), ("no way 😭", "c1", "u1"), ("longer message", "c2", "u2")],
+    )
+    con.commit()
+    con.close()
+
+    profiles = load_archive_profiles(path)
+
+    assert profiles.server.sample_count == 3
+    assert profiles.channels["c1"].sample_count == 2
+    assert profiles.people["u1"].sample_count == 2

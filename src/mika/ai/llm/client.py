@@ -25,10 +25,18 @@ from mika.conversation.generation import (
 )
 from mika.conversation.media import TemporalMediaSampler, media_context
 from mika.conversation.participation import ParticipationDecision
+from mika.conversation.skills.natural_expression import NaturalExpressionSkill
+from mika.conversation.skills.natural_expression.guild_catalog import (
+    GuildEmojiCatalog,
+    GuildEmojiDescriptor,
+)
+from mika.conversation.skills.natural_expression.human_style import load_archive_profiles
+from mika.conversation.skills.natural_expression.visual_profile import VisualProfiler
 from mika.conversation.tools import ToolPlan
 from mika.conversation.tools.abilities.web_search import web_search_tool
 from mika.core.config import get_settings
 from mika.core.logging import get_logger
+from mika.persistence.conversations.managed_expression_profiles import ManagedExpressionProfiles
 
 if TYPE_CHECKING:
     from mika.conversation.trace_service import TurnTraceService
@@ -74,6 +82,11 @@ class LLMClient:
         self._honcho = HonchoMemory() if settings.memory.honcho_enabled else None
         self._tools = ToolRegistry()
         self._media = TemporalMediaSampler()
+        self._style_profiles = load_archive_profiles(settings.shared_archive_path)
+        self._expression = NaturalExpressionSkill(self._style_profiles.server)
+        self._emoji_catalog = GuildEmojiCatalog()
+        self._visual_profiler = VisualProfiler()
+        self._expression_profiles = ManagedExpressionProfiles()
         if settings.tools.web_search_enabled:
             self._tools.register(web_search_tool())
         self._generation = GenerationService(
@@ -100,6 +113,35 @@ class LLMClient:
             if closer is not None:
                 await closer()
 
+    async def sync_guild_emojis(
+        self, guild_id: str, descriptors: list[GuildEmojiDescriptor]
+    ) -> None:
+        """Refresh rename-safe custom emoji profiles from Discord metadata."""
+        self._emoji_catalog.sync(guild_id, descriptors)
+        for descriptor in descriptors:
+            evidence = self._visual_profiler.describe(descriptor.name, animated=descriptor.animated)
+            await self._expression_profiles.upsert(
+                guild_id,
+                descriptor.emoji_id,
+                descriptor.name,
+                descriptor.animated,
+                descriptor.available,
+                evidence.description,
+                evidence.family,
+                evidence.confidence,
+            )
+        for stored in await self._expression_profiles.list(guild_id):
+            try:
+                self._emoji_catalog.set_description(
+                    guild_id,
+                    stored.emoji_id,
+                    stored.description,
+                    stored.family,
+                    stored.confidence,
+                )
+            except KeyError:
+                continue
+
     async def reply(
         self,
         *,
@@ -122,7 +164,16 @@ class LLMClient:
             with trace.measure("retrieval"):
                 history = await self._build_history(channel_id)
         user_input = self._compose_user_input(text, media_context)
-        generation_input = self._compose_generation_input(user_input, history)
+        guidance = self._expression.guide(
+            channel_id,
+            user_input,
+            "chat",
+            0.7,
+            mentioned=True,
+            channel_style=self._style_profiles.channels.get(channel_id),
+            person_style=self._style_profiles.people.get(author_id),
+        )
+        generation_input = self._compose_generation_input(user_input, history, guidance.render())
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         reflection, _ = await last_reflection()
         system = build_system_prompt(self._memory_context(recall, reflection))
@@ -143,6 +194,16 @@ class LLMClient:
             ),
             trace=trace,
         )
+        final_guidance = self._expression.guide(
+            channel_id,
+            user_input,
+            turn.intent,
+            turn.confidence,
+            mentioned=True,
+            channel_style=self._style_profiles.channels.get(channel_id),
+            person_style=self._style_profiles.people.get(author_id),
+        )
+        turn = replace(turn, reply=self._expression.validate(turn.reply, final_guidance))
         await self._persist(channel_id, author_id, author_name, user_input, turn.reply)
         return turn
 
@@ -164,7 +225,20 @@ class LLMClient:
             for item in context.history
         ]
         user_input = self._compose_user_input(envelope.text, media_context(envelope.visual_inputs))
-        generation_input = self._compose_generation_input(user_input, history)
+        channel_style = self._style_profiles.channels.get(envelope.channel_id)
+        person_style = self._style_profiles.people.get(envelope.author_id)
+        profiles = self._emoji_catalog.profiles(envelope.guild_id)
+        guidance = self._expression.guide(
+            envelope.channel_id,
+            user_input,
+            "chat",
+            0.7,
+            envelope.mentioned,
+            profiles=profiles,
+            channel_style=channel_style,
+            person_style=person_style,
+        )
+        generation_input = self._compose_generation_input(user_input, history, guidance.render())
         recall = await self._honcho.recall(user_input) if self._honcho is not None else ""
         reflection, _ = await last_reflection()
         memory_context = "\n\n".join(value for value in (context.memory, recall) if value.strip())
@@ -180,13 +254,32 @@ class LLMClient:
                 decision_text=user_input,
             )
         )
+        final_guidance = self._expression.guide(
+            envelope.channel_id,
+            user_input,
+            turn.intent,
+            turn.confidence,
+            envelope.mentioned,
+            profiles=profiles,
+            channel_style=channel_style,
+            person_style=person_style,
+        )
+        turn = replace(turn, reply=self._expression.validate(turn.reply, final_guidance))
         return self._gate_media_choice(self._force_requested_media(turn, user_input), user_input)
 
     def _compose_user_input(self, text: str, media_context: str = "") -> str:
         return _PROMPT.user_input(text, media_context)
 
-    def _compose_generation_input(self, user_input: str, history: list[Message]) -> str:
-        return _PROMPT.generation_input(user_input, history)
+    def _compose_generation_input(
+        self, user_input: str, history: list[Message], expression_guidance: str = ""
+    ) -> str:
+        return _PROMPT.generation_input(
+            user_input, history, expression_guidance=expression_guidance
+        )
+
+    def observe_expression(self, channel_id: str, reply: str, reactions: tuple[str, ...]) -> None:
+        """Record style only after Discord rendered the action."""
+        self._expression.observe(channel_id, reply, reactions)
 
     def _memory_context(self, recall: str, reflection: str | None) -> str:
         sections: list[str] = []

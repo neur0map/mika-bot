@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mika.ai.llm.chat.prompt import build_system_prompt
+from mika.conversation.generation.prompt import PromptComposer
 from mika.core.config import get_settings
 
 
@@ -39,3 +40,12 @@ def test_prompt_guides_discord_social_selectivity() -> None:
     assert "Do not hijack human-to-human conversations" in prompt
     assert "public channels stay less intimate" in prompt
     assert "reaction-only" in prompt
+
+
+def test_generation_prompt_uses_measured_style_target() -> None:
+    prompt = PromptComposer().generation_input(
+        "hello", [], expression_guidance="Aim for about 5 words in one sentence. Emoji optional."
+    )
+
+    assert "Aim for about 5 words" in prompt
+    assert "recent assistant wording" not in prompt

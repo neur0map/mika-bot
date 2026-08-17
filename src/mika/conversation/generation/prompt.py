@@ -16,20 +16,28 @@ class PromptComposer:
             return f"{clean_text}\n{clean_media}"
         return clean_text or clean_media or "[media/message with no text]"
 
-    def generation_input(self, user_input: str, history: list[Message]) -> str:
+    def generation_input(
+        self,
+        user_input: str,
+        history: list[Message],
+        *,
+        expression_guidance: str = "",
+    ) -> str:
         """Append bounded assistant wording that the next turn should not repeat."""
         phrases = [
             str(item.get("content") or "").strip()[:180]
             for item in reversed(history)
             if item.get("role") == "assistant" and str(item.get("content") or "").strip()
         ][:4]
-        if not phrases:
-            return user_input
-        lines = "\n".join(f"- {phrase}" for phrase in phrases)
-        return (
-            f"{user_input}\n\n[recent assistant wording to avoid repeating; keep the same "
-            f"personality but vary rhythm, joke shape, and phrasing.]\n{lines}"
-        )
+        sections = [user_input]
+        if expression_guidance.strip():
+            sections.append("[measured server writing style]\n" + expression_guidance.strip())
+        if phrases:
+            lines = "\n".join(f"- {phrase}" for phrase in phrases)
+            sections.append(
+                "[recent assistant wording to avoid repeating; vary rhythm and phrasing]\n" + lines
+            )
+        return "\n\n".join(sections)
 
     def structured(self, user_text: str) -> str:
         """Request the stable social-turn JSON contract."""

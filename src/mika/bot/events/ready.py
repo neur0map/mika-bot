@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from mika.bot.events.emoji_profiles import descriptors
 from mika.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -20,4 +21,6 @@ def setup(bot: BotApp) -> None:
     @bot.event
     async def on_ready() -> None:
         logger.info("connected as %s", bot.user)
+        for guild in bot.guilds:
+            await bot.llm.sync_guild_emojis(str(guild.id), descriptors(guild.emojis))
         await bot.change_presence(activity=discord.Game(name="the conversation"))

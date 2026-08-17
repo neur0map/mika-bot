@@ -8,7 +8,10 @@ from mika.conversation.skills.natural_expression.contracts import (
     EmojiProfile,
     ExpressionGuidance,
 )
-from mika.conversation.skills.natural_expression.human_style import HumanStyleProfile
+from mika.conversation.skills.natural_expression.human_style import (
+    HumanStyleProfile,
+    blend_profiles,
+)
 from mika.conversation.skills.natural_expression.selector import ExpressionSelector
 from mika.conversation.skills.natural_expression.situation import assess_situation
 from mika.conversation.skills.natural_expression.style_ledger import StyleLedger
@@ -33,12 +36,13 @@ class NaturalExpressionSkill:
         mentioned: bool,
         *,
         profiles: tuple[EmojiProfile, ...] = (),
+        channel_style: HumanStyleProfile | None = None,
+        person_style: HumanStyleProfile | None = None,
     ) -> ExpressionGuidance:
         """Create guidance from situation, human baseline, and recent output."""
         situation = assess_situation(text, intent, confidence, mentioned)
-        return self._selector.select(
-            situation, self._style, self._ledger.snapshot(channel_id), profiles
-        )
+        style = blend_profiles(self._style, channel_style, person_style)
+        return self._selector.select(situation, style, self._ledger.snapshot(channel_id), profiles)
 
     def validate(self, reply: str, guidance: ExpressionGuidance) -> str:
         """Remove conspicuous model habits that the decision did not authorize."""
