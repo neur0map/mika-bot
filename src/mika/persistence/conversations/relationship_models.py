@@ -105,6 +105,22 @@ class StoredProfileVersion(Base):
     created_at: Mapped[datetime] = mapped_column(_UTCDateTime())
 
 
+class StoredProfileClaimLink(Base):
+    """Lossless claim membership and ordering for an immutable profile version."""
+
+    __tablename__ = "relationship_profile_claim_links"
+
+    profile_version_id: Mapped[str] = mapped_column(
+        ForeignKey("relationship_profile_versions.profile_version_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    claim_id: Mapped[str] = mapped_column(
+        ForeignKey("relationship_claims.claim_id", ondelete="CASCADE"), primary_key=True
+    )
+    layer: Mapped[str] = mapped_column(String(32))
+    position: Mapped[int] = mapped_column(Integer)
+
+
 class StoredProfileHead(Base):
     """Mutable pointer to one user's active immutable profile version."""
 

@@ -21,7 +21,10 @@ from mika.persistence.conversations.relationship_models import (
     StoredClaim,
     StoredClaimEvidence,
 )
-from mika.persistence.conversations.relationship_records import ClaimTransitionRecord
+from mika.persistence.conversations.relationship_records import (
+    ClaimTransitionRecord,
+    ProfileClaimLinkRecord,
+)
 
 
 async def test_consolidation_reads_include_newest_candidate_after_one_thousand_rows(
@@ -147,6 +150,56 @@ async def test_failed_profile_publication_rolls_back_lifecycle_transitions(
         candidate = await memory.claim("candidate")
         assert candidate is not None and candidate.state == "candidate"
         assert await memory.active_profile("user-1") == original
+    finally:
+        await memory.close()
+        await engine.dispose()
+
+
+async def test_profile_claim_links_round_trip_as_primitive_metadata(tmp_path: Path) -> None:
+    """Active profile reads retain lossless claim membership without display parsing."""
+    memory, engine = await repository(tmp_path / "memory.db")
+    try:
+        await memory.write_policy_version(policy())
+        await memory.add_evidence(claim("linked"), evidence("source-linked"))
+        await memory.activate_claim("linked", confirmed_at=NOW)
+        linked_profile = replace(
+            profile("profile-linked", "Interests: favorite_game: Tea; coffee"),
+            claim_links=(ProfileClaimLinkRecord("linked", "interests", 0),),
+        )
+
+        await memory.write_profile_version(linked_profile)
+
+        assert await memory.active_profile("user-1") == linked_profile
+    finally:
+        await memory.close()
+        await engine.dispose()
+
+
+async def test_same_policy_content_reversion_reuses_profile_and_commits_transitions(
+    tmp_path: Path,
+) -> None:
+    """A to B to A publication reuses immutable A while committing its transaction."""
+    memory, engine = await repository(tmp_path / "memory.db")
+    try:
+        await memory.write_policy_version(policy())
+        await memory.add_evidence(claim("stable"), evidence("source-stable"))
+        await memory.activate_claim("stable", confirmed_at=NOW)
+        await memory.add_evidence(claim("promoted-on-revert"), evidence("source-promoted"))
+        links = (ProfileClaimLinkRecord("stable", "interests", 0),)
+        first = replace(profile("profile-a", "Interests: favorite_game: A"), claim_links=links)
+        second = replace(profile("profile-b", "Interests: favorite_game: B"), claim_links=links)
+
+        await memory.publish_consolidation(first, ())
+        await memory.publish_consolidation(second, ())
+        await memory.publish_consolidation(
+            first,
+            (ClaimTransitionRecord("promoted-on-revert", "candidate", "active", NOW),),
+        )
+
+        active = await memory.active_profile("user-1")
+        promoted = await memory.claim("promoted-on-revert")
+        assert active == first
+        assert promoted is not None and promoted.state == "active"
     finally:
         await memory.close()
         await engine.dispose()

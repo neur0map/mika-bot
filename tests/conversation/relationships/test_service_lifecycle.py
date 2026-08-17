@@ -224,3 +224,37 @@ async def test_unchanged_profile_is_republished_under_effective_policy(tmp_path:
     finally:
         await store.close()
         await engine.dispose()
+
+
+async def test_predecessor_profile_round_trips_delimiter_values_losslessly(tmp_path: Path) -> None:
+    """Display delimiters inside values cannot corrupt predecessor reconstruction."""
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        preference = claim_write(
+            "delimiter-value",
+            key="preference:drink",
+            value="Tea; coffee",
+            evidence_class="explicit",
+            guild_id="guild-1",
+            channel_id="channel-1",
+        )
+        await store.add_evidence(
+            preference,
+            evidence_write("delimiter-source", guild_id="guild-1", channel_id="channel-1"),
+        )
+        await store.activate_claim("delimiter-value", confirmed_at=NOW)
+
+        first = await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+        second = await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+
+        active = await store.active_profile("user-1")
+        assert first.profile_changed is True
+        assert second.profile_changed is False
+        assert active is not None and "Tea; coffee" in active.overview_text
+    finally:
+        await store.close()
+        await engine.dispose()

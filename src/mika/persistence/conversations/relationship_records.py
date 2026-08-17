@@ -89,6 +89,15 @@ class ClaimTransitionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileClaimLinkRecord:
+    """Primitive claim membership for one ordered profile layer entry."""
+
+    claim_id: str
+    layer: str
+    position: int
+
+
+@dataclass(frozen=True, slots=True)
 class ProfileVersionRecord:
     """One immutable rendered relationship-profile version."""
 
@@ -100,6 +109,7 @@ class ProfileVersionRecord:
     generator_version: str
     policy_version_id: str
     created_at: datetime
+    claim_links: tuple[ProfileClaimLinkRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

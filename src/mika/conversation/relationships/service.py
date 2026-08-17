@@ -32,6 +32,7 @@ from mika.persistence.conversations.relationship_records import (
     ClaimTransitionRecord,
     ClaimWrite,
     EvidenceWrite,
+    ProfileClaimLinkRecord,
     ProfileVersionRecord,
     RecallEventWrite,
     RelationshipMemoryPolicyVersionRecord,
@@ -359,12 +360,14 @@ class RelationshipMemoryService:
         )
         record = None
         if profile is not None and not unchanged:
+            claim_links = _profile_claim_links(profile)
             version_id = _stable_id(
                 "profile",
                 subject_user_id,
                 policy_version_id,
                 profile.index_text,
                 profile.overview_text,
+                *(f"{link.layer}:{link.position}:{link.claim_id}" for link in claim_links),
             )
             record = ProfileVersionRecord(
                 version_id,
@@ -375,6 +378,7 @@ class RelationshipMemoryService:
                 "deterministic-v1",
                 policy_version_id,
                 self._clock(),
+                claim_links,
             )
         transitions = _claim_transitions(records, result.claims, self._clock())
         await self._repository.publish_consolidation(record, transitions)
@@ -468,71 +472,63 @@ def _claim_transitions(
 def _relationship_profile(
     record: ProfileVersionRecord, claims: Sequence[ClaimRecord]
 ) -> RelationshipProfile:
-    grouped: dict[tuple[str, str, str], list[ClaimRecord]] = defaultdict(list)
-    for claim in claims:
-        if claim.last_confirmed_at is None or claim.last_confirmed_at > record.created_at:
-            continue
-        key = " ".join(claim.key.casefold().split())
-        value = " ".join(claim.value.split())
-        grouped[(_profile_layer(claim.kind, key), key, value)].append(claim)
-    overview = _overview_layers(record.overview_text)
-    available = {
-        (layer, f"{key}: {value}"): ProfileEntry(
-            key, value, tuple(sorted(item.claim_id for item in items))
+    by_id = {claim.claim_id: claim for claim in claims}
+    grouped: dict[tuple[str, int], list[ClaimRecord]] = defaultdict(list)
+    for link in record.claim_links:
+        claim = by_id.get(link.claim_id)
+        if claim is None:
+            raise ValueError("active relationship profile references an unknown claim")
+        grouped[(link.layer, link.position)].append(claim)
+    entries: dict[str, list[tuple[int, ProfileEntry]]] = defaultdict(list)
+    for (layer, position), items in grouped.items():
+        keys = {" ".join(item.key.casefold().split()) for item in items}
+        values = {" ".join(item.value.split()) for item in items}
+        if len(keys) != 1 or len(values) != 1:
+            raise ValueError("active relationship profile claim group is inconsistent")
+        entries[layer].append(
+            (
+                position,
+                ProfileEntry(
+                    next(iter(keys)),
+                    next(iter(values)),
+                    tuple(sorted(item.claim_id for item in items)),
+                ),
+            )
         )
-        for (layer, key, value), items in grouped.items()
-    }
-    entries: dict[str, list[ProfileEntry]] = defaultdict(list)
-    for layer, rendered_entries in overview.items():
-        for rendered in rendered_entries:
-            entry = available.get((layer, rendered))
-            if entry is None:
-                raise ValueError("active relationship profile cannot be mapped to source claims")
-            entries[layer].append(entry)
     profile = RelationshipProfile(
         subject_user_id=record.subject_user_id,
         version=1,
-        posture=tuple(entries["posture"]),
-        expression=tuple(entries["expression"]),
-        interests=tuple(entries["interests"]),
-        care_patterns=tuple(entries["care_patterns"]),
-        conflict_repair=tuple(entries["conflict_repair"]),
-        anchors=tuple(entries["anchors"]),
+        posture=_ordered_entries(entries["posture"]),
+        expression=_ordered_entries(entries["expression"]),
+        interests=_ordered_entries(entries["interests"]),
+        care_patterns=_ordered_entries(entries["care_patterns"]),
+        conflict_repair=_ordered_entries(entries["conflict_repair"]),
+        anchors=_ordered_entries(entries["anchors"]),
     )
+    if (profile.index_text, profile.overview_text) != (record.index_text, record.overview_text):
+        raise ValueError("active relationship profile content does not match its claim links")
     return profile
 
 
-def _overview_layers(overview_text: str) -> Mapping[str, tuple[str, ...]]:
-    headings = {
-        "Posture": "posture",
-        "Expression": "expression",
-        "Interests": "interests",
-        "Care patterns": "care_patterns",
-        "Conflict and repair": "conflict_repair",
-        "Anchors": "anchors",
-    }
-    parsed: dict[str, tuple[str, ...]] = {}
-    for line in overview_text.splitlines():
-        heading, separator, content = line.partition(": ")
-        layer = headings.get(heading)
-        if not separator or layer is None:
-            raise ValueError("active relationship profile has an invalid overview")
-        parsed[layer] = tuple(content.split("; "))
-    return parsed
+def _profile_claim_links(profile: RelationshipProfile) -> tuple[ProfileClaimLinkRecord, ...]:
+    layers = (
+        ("posture", profile.posture),
+        ("expression", profile.expression),
+        ("interests", profile.interests),
+        ("care_patterns", profile.care_patterns),
+        ("conflict_repair", profile.conflict_repair),
+        ("anchors", profile.anchors),
+    )
+    return tuple(
+        ProfileClaimLinkRecord(claim_id, layer, position)
+        for layer, layer_entries in layers
+        for position, entry in enumerate(layer_entries)
+        for claim_id in entry.claim_ids
+    )
 
 
-def _profile_layer(kind: str, key: str) -> str:
-    if kind in {"boundary", "conflict", "repair"} or key.startswith("address:"):
-        return "conflict_repair"
-    if kind == "expression":
-        return "expression"
-    if kind == "preference":
-        return "interests"
-    if kind in {"care", "support"}:
-        return "care_patterns"
-    if kind in {"anchor", "event", "shared_moment"}:
-        return "anchors"
-    return "posture"
+def _ordered_entries(entries: Sequence[tuple[int, ProfileEntry]]) -> tuple[ProfileEntry, ...]:
+    return tuple(entry for _, entry in sorted(entries, key=lambda item: item[0]))
 
 
 def _proposal_from_record(record: ClaimEvidenceRecord, claim: ClaimRecord) -> EvidenceProposal:

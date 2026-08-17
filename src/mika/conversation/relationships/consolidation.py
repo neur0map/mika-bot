@@ -13,7 +13,8 @@ from mika.conversation.relationships.extraction import EvidenceProposal
 from mika.conversation.relationships.profile import ProfileEntry, RelationshipProfile
 
 _INFERENCE_EXPIRY = timedelta(days=30)
-_TERMINAL_STATES = frozenset({"superseded", "expired"})
+_REPLACEMENT_TERMINAL_STATES = frozenset({"superseded", "expired"})
+_PROMPT_INACTIVE_STATES = frozenset({"disputed", "superseded", "expired"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +138,7 @@ def _supersede_predecessors(claims: Sequence[RelationshipClaim]) -> tuple[Relati
     }
     return tuple(
         replace(claim, state="superseded")
-        if claim.claim_id in replacement_ids and claim.state not in _TERMINAL_STATES
+        if claim.claim_id in replacement_ids and claim.state not in _REPLACEMENT_TERMINAL_STATES
         else claim
         for claim in claims
     )
@@ -317,7 +318,7 @@ def _missing_protected_entries(
             missing_ids = tuple(
                 claim_id
                 for claim_id in entry.claim_ids
-                if states.get(claim_id) not in _TERMINAL_STATES and claim_id not in visible
+                if states.get(claim_id) not in _PROMPT_INACTIVE_STATES and claim_id not in visible
             )
             if missing_ids:
                 missing.append((layer, ProfileEntry(entry.key, entry.value, missing_ids)))

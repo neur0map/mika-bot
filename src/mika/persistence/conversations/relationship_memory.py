@@ -32,6 +32,7 @@ from mika.persistence.conversations.relationship_models import (
     StoredClaimEvidence,
     StoredPolicyHead,
     StoredPolicyVersion,
+    StoredProfileClaimLink,
     StoredProfileHead,
     StoredProfileVersion,
     StoredRecallEvent,
@@ -240,33 +241,7 @@ class RelationshipMemoryRepository:
 
     async def write_profile_version(self, record: ProfileVersionRecord) -> None:
         """Insert an immutable profile version and atomically move its user's head."""
-        if await self._session.get(StoredProfileVersion, record.profile_version_id) is not None:
-            await self._session.rollback()
-            raise ValueError("profile version already exists")
-        await self._require_policy_version(record.policy_version_id)
-        self._session.add(
-            StoredProfileVersion(
-                profile_version_id=record.profile_version_id,
-                subject_user_id=record.subject_user_id,
-                index_text=record.index_text,
-                overview_text=record.overview_text,
-                schema_version=record.schema_version,
-                generator_version=record.generator_version,
-                policy_version_id=record.policy_version_id,
-                created_at=record.created_at,
-            )
-        )
-        head = await self._session.get(StoredProfileHead, record.subject_user_id)
-        if head is None:
-            self._session.add(
-                StoredProfileHead(
-                    subject_user_id=record.subject_user_id,
-                    profile_version_id=record.profile_version_id,
-                )
-            )
-        else:
-            head.profile_version_id = record.profile_version_id
-        await self._commit()
+        await publish_consolidation_transaction(self._session, record, ())
 
     async def publish_consolidation(
         self,
@@ -287,7 +262,22 @@ class RelationshipMemoryRepository:
             .where(StoredProfileHead.subject_user_id == subject_user_id)
         )
         stored = await self._session.scalar(statement)
-        return None if stored is None else profile_record(stored)
+        if stored is None:
+            return None
+        links = list(
+            (
+                await self._session.scalars(
+                    select(StoredProfileClaimLink)
+                    .where(StoredProfileClaimLink.profile_version_id == stored.profile_version_id)
+                    .order_by(
+                        StoredProfileClaimLink.layer,
+                        StoredProfileClaimLink.position,
+                        StoredProfileClaimLink.claim_id,
+                    )
+                )
+            ).all()
+        )
+        return profile_record(stored, links)
 
     async def write_policy_version(self, record: RelationshipMemoryPolicyVersionRecord) -> None:
         """Insert an immutable policy version and atomically make it effective."""
@@ -536,6 +526,15 @@ class RelationshipMemoryRepository:
             )
         await self._session.execute(
             delete(StoredProfileHead).where(StoredProfileHead.subject_user_id == subject_user_id)
+        )
+        await self._session.execute(
+            delete(StoredProfileClaimLink).where(
+                StoredProfileClaimLink.profile_version_id.in_(
+                    select(StoredProfileVersion.profile_version_id).where(
+                        StoredProfileVersion.subject_user_id == subject_user_id
+                    )
+                )
+            )
         )
         await self._session.execute(
             delete(StoredProfileVersion).where(

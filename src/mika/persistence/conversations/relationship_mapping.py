@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from mika.persistence.conversations.relationship_models import (
     StoredClaim,
     StoredClaimEvidence,
     StoredPolicyVersion,
+    StoredProfileClaimLink,
     StoredProfileVersion,
     StoredRecallEvent,
 )
@@ -19,6 +21,7 @@ from mika.persistence.conversations.relationship_records import (
     ClaimRecord,
     ClaimWrite,
     EvidenceWrite,
+    ProfileClaimLinkRecord,
     ProfileVersionRecord,
     RecallEventWrite,
     RelationshipMemoryPolicyVersionRecord,
@@ -121,7 +124,10 @@ def same_claim(stored: StoredClaim, claim: ClaimWrite) -> bool:
     )
 
 
-def profile_record(stored: StoredProfileVersion) -> ProfileVersionRecord:
+def profile_record(
+    stored: StoredProfileVersion,
+    links: Sequence[StoredProfileClaimLink] = (),
+) -> ProfileVersionRecord:
     """Convert one immutable profile ORM row to its DTO."""
     return ProfileVersionRecord(
         stored.profile_version_id,
@@ -132,6 +138,7 @@ def profile_record(stored: StoredProfileVersion) -> ProfileVersionRecord:
         stored.generator_version,
         stored.policy_version_id,
         stored.created_at,
+        tuple(ProfileClaimLinkRecord(item.claim_id, item.layer, item.position) for item in links),
     )
 
 
