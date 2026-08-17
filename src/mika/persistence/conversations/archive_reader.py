@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
+from mika.persistence.conversations.relationship_integrity import normalize_discord_message_id
 from mika.persistence.conversations.relationship_records import ArchiveCursor, ArchiveSourceRecord
 
 _VISIBILITY_KINDS = {"direct_message", "guild", "channel", "global_explicit"}
@@ -29,7 +30,8 @@ class ArchiveReader:
         records = self._read_records()
         records.sort(key=lambda item: (item.archive_created_at, int(item.discord_message_id)))
         if cursor is not None:
-            cursor_key = (cursor.archive_created_at.astimezone(UTC), int(cursor.discord_message_id))
+            message_id = normalize_discord_message_id(cursor.discord_message_id)
+            cursor_key = (cursor.archive_created_at.astimezone(UTC), int(message_id))
             records = [
                 item
                 for item in records
@@ -64,8 +66,9 @@ class ArchiveReader:
         return [record for row in rows if (record := self._record(row)) is not None]
 
     def _record(self, row: sqlite3.Row) -> ArchiveSourceRecord | None:
-        message_id = str(row["discord_message_id"] or "")
-        if not message_id.isdecimal() or int(message_id) < 1:
+        try:
+            message_id = normalize_discord_message_id(str(row["discord_message_id"] or ""))
+        except ValueError:
             return None
         created_at = _utc_timestamp(str(row["created_at"] or ""))
         if created_at is None:

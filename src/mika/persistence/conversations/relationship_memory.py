@@ -10,6 +10,12 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mika.persistence.conversations.relationship_integrity import (
+    normalize_discord_message_id,
+    validate_activation,
+    validate_claim_evidence_scope,
+    validate_replacement,
+)
 from mika.persistence.conversations.relationship_mapping import (
     as_utc,
     canonical_json,
@@ -65,6 +71,11 @@ class RelationshipMemoryRepository:
 
     async def add_evidence(self, claim: ClaimWrite, evidence: EvidenceWrite) -> ClaimRecord:
         """Create a claim if needed and attach one deduplicated source observation."""
+        try:
+            validate_claim_evidence_scope(claim, evidence)
+        except ValueError:
+            await self._session.rollback()
+            raise
         stored = await self._session.get(StoredClaim, claim.claim_id)
         if stored is None:
             stored = stored_claim(claim)
@@ -88,6 +99,11 @@ class RelationshipMemoryRepository:
     async def activate_claim(self, claim_id: str, *, confirmed_at: datetime) -> ClaimRecord:
         """Activate an existing claim and record its confirmation time."""
         stored = await self._require_claim(claim_id)
+        try:
+            validate_activation(stored.state)
+        except ValueError:
+            await self._session.rollback()
+            raise
         stored.state = "active"
         stored.last_confirmed_at = as_utc(confirmed_at)
         await self._commit()
@@ -106,9 +122,11 @@ class RelationshipMemoryRepository:
         if await self._session.get(StoredClaim, replacement.claim_id) is not None:
             await self._session.rollback()
             raise ValueError("replacement claim already exists")
-        if replacement.predecessor_claim_id != previous_claim_id:
+        try:
+            validate_replacement(previous, replacement, evidence)
+        except ValueError:
             await self._session.rollback()
-            raise ValueError("replacement predecessor does not match superseded claim")
+            raise
         previous.state = "superseded"
         previous.last_observed_at = max(previous.last_observed_at, as_utc(superseded_at))
         stored = stored_claim(replacement)
@@ -242,15 +260,16 @@ class RelationshipMemoryRepository:
 
     async def advance_cursor(self, cursor: ArchiveCursor) -> None:
         """Advance one archive cursor without permitting regression."""
+        message_id = normalize_discord_message_id(cursor.discord_message_id)
         stored = await self._session.get(StoredArchiveCursor, cursor.source_name)
-        incoming_key = (as_utc(cursor.archive_created_at), cursor.discord_message_id)
+        incoming_key = (as_utc(cursor.archive_created_at), int(message_id))
         if stored is not None:
-            current_key = (stored.archive_created_at, stored.discord_message_id)
+            current_key = (stored.archive_created_at, int(stored.discord_message_id))
             if incoming_key <= current_key:
                 await self._session.rollback()
                 return
             stored.archive_created_at = cursor.archive_created_at
-            stored.discord_message_id = cursor.discord_message_id
+            stored.discord_message_id = message_id
             stored.policy_version_id = cursor.policy_version_id
             stored.updated_at = cursor.updated_at
         else:
@@ -258,7 +277,7 @@ class RelationshipMemoryRepository:
                 StoredArchiveCursor(
                     source_name=cursor.source_name,
                     archive_created_at=cursor.archive_created_at,
-                    discord_message_id=cursor.discord_message_id,
+                    discord_message_id=message_id,
                     policy_version_id=cursor.policy_version_id,
                     updated_at=cursor.updated_at,
                 )
@@ -462,7 +481,9 @@ class RelationshipMemoryRepository:
         await self._commit()
 
     async def _require_claim(self, claim_id: str) -> StoredClaim:
-        stored = await self._session.get(StoredClaim, claim_id)
+        stored = await self._session.scalar(
+            select(StoredClaim).where(StoredClaim.claim_id == claim_id).with_for_update()
+        )
         if stored is None:
             await self._session.rollback()
             raise ValueError("claim does not exist")
