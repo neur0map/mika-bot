@@ -61,6 +61,17 @@ def test_explicit_fact_activates_immediately() -> None:
     assert decision.reason == "explicit_fact"
 
 
+def test_explicit_evidence_outranks_a_behavior_candidate() -> None:
+    """A later direct fact must promote the same claim over weaker behavior."""
+    decision = ActivationPolicy().evaluate(
+        claim("repeated_behavior"),
+        [evidence("explicit", "message-1", BASE_TIME)],
+    )
+
+    assert decision.state == "active"
+    assert decision.reason == "explicit_fact"
+
+
 def test_direct_correction_activates_immediately() -> None:
     """Corrections become usable as soon as their source is retained."""
     decision = ActivationPolicy().evaluate(
@@ -125,6 +136,22 @@ def test_reaction_requires_three_consistent_positive_signals() -> None:
     assert inconsistent.reason == "reaction_signals_inconsistent"
     assert active.state == "active"
     assert active.reason == "reaction_threshold_met"
+
+
+def test_negative_reaction_outranks_a_positive_signal_from_the_same_source() -> None:
+    """Source deduplication must not hide a conflicting negative reaction."""
+    decision = ActivationPolicy().evaluate(
+        claim("reaction"),
+        [
+            evidence("reaction", "message-1", BASE_TIME),
+            evidence("reaction", "message-1", BASE_TIME, value="negative"),
+            evidence("reaction", "message-2", BASE_TIME + timedelta(days=1)),
+            evidence("reaction", "message-3", BASE_TIME + timedelta(days=2)),
+        ],
+    )
+
+    assert decision.state == "candidate"
+    assert decision.reason == "reaction_signals_inconsistent"
 
 
 def test_inference_remains_a_candidate() -> None:

@@ -36,7 +36,7 @@ class ActivationPolicy:
         supporting = tuple(item for item in evidence if item.key == claim.key)
         if _has_class(supporting, "correction"):
             return ActivationDecision("active", "direct_correction")
-        if claim.evidence_class == "explicit" and _has_class(supporting, "explicit"):
+        if _has_class(supporting, "explicit"):
             return ActivationDecision("active", "explicit_fact")
         if claim.evidence_class == "repeated_behavior":
             return _behavior_decision(supporting)
@@ -64,9 +64,9 @@ def _reaction_decision(
     evidence: Sequence[EvidenceProposal],
 ) -> ActivationDecision:
     """Activate reaction evidence only when three source-distinct signals agree."""
-    reactions = _distinct_by_source(evidence, "reaction")
-    if any(item.value == "negative" for item in reactions):
+    if any(item.evidence_class == "reaction" and item.value == "negative" for item in evidence):
         return ActivationDecision("candidate", "reaction_signals_inconsistent")
+    reactions = _distinct_by_source(evidence, "reaction")
     consistent = [item for item in reactions if item.value == claim.value]
     if len(consistent) >= _REACTION_SIGNAL_MINIMUM:
         return ActivationDecision("active", "reaction_threshold_met")
