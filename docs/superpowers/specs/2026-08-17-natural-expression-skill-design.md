@@ -13,6 +13,17 @@ misleading, and avoid repeating conspicuous habits across nearby replies.
 The skill improves expression selection; it does not replace the participation planner, persona,
 provider, memory system, or structured turn contract.
 
+## Evidence-based revision
+
+An analysis of 12,031 human messages and 679 assistant messages from the local server archive changed
+the design priority. Human messages had a five-word median, used emoji in 4.4% of messages, used em
+dashes in 0.14%, and contained multiple sentences in 2.5%. Assistant messages had an eight-word
+median, used emoji in 30.2%, used em dashes in 1.77%, and contained multiple sentences in 18.6%.
+
+Emoji reuse also occurred naturally among humans, so a fixed cooldown would manufacture a different
+kind of artificial behavior. The primary feature is therefore a learned human-style distribution;
+emoji intelligence and repetition penalties operate beneath that distribution.
+
 ## Observed production problem
 
 Recent production replies repeatedly used the same small set of inline emoji, particularly smirking
@@ -69,6 +80,7 @@ natural_expression/
   contracts.py
   skill.py
   situation.py
+  human_style.py
   unicode_catalog.py
   guild_catalog.py
   visual_profile.py
@@ -86,6 +98,14 @@ The initial implementation uses deterministic scoring around Mika's existing str
 small local vision-text embedding model may produce visual evidence in a background profiler. A
 second generative intent model is explicitly deferred because it would add latency and another
 failure boundary before evidence shows the deterministic classifier is insufficient.
+
+The style target blends server, channel, and person profiles. Server evidence has the highest weight,
+channel evidence adjusts local formality and rhythm, and the current person's profile contributes a
+bounded adjustment. Mika does not imitate one person's vocabulary or identity markers.
+
+Profiles contain aggregate statistics, never message bodies: message and word-length quantiles,
+sentence count, emoji and custom-emoji rate, punctuation rates, casing, and normalized opening
+frequencies. Runtime prompts receive a compact target range rather than example messages.
 
 ## Core contracts
 
@@ -220,6 +240,10 @@ An emoji is eligible only when it exceeds both a minimum confidence threshold an
 candidate by a configured margin. Low-confidence custom emoji are observation-only. The selector
 returns at most three candidates; the provider may still choose no emoji.
 
+The style profile supplies the prior probability of any emoji. Situation fit may raise or lower that
+probability, but ordinary casual chat inherits the human server baseline. Per-person emoji rate can
+only move the server prior within a bounded range and requires enough observations.
+
 ## Natural-style ledger
 
 The style ledger stores bounded fingerprints for recent assistant replies per channel and globally:
@@ -233,14 +257,12 @@ The style ledger stores bounded fingerprints for recent assistant replies per ch
 - lightweight lexical shingles for repeated phrasing
 - structured intent and response shape
 
-Default cooldown policy:
+Default repetition policy:
 
-- exact inline emoji: strong penalty for the next four assistant replies
-- exact reaction: moderate penalty for the next three relevant actions
-- semantic emoji family: moderate diversity penalty for three replies
-- em dash or spaced-dash cadence: strong penalty on the next reply and moderate penalty for three
-- repeated opening or highly similar phrase: penalty within the last four assistant replies
-- repeated joke/flirt shape: penalty within the same short conversation window
+- exact emoji and semantic-family reuse are penalized relative to measured human reuse, not banned
+- conspicuous punctuation is discouraged when its measured server rate is low
+- repeated openings and highly similar phrases are penalized within the recent assistant window
+- repeated joke or flirt shape is penalized within the same short conversation window
 
 Cooldowns never rewrite quoted material, code, URLs, user names, or factual punctuation. A strong
 semantic match may override a cooldown, and the override is recorded for evaluation.
@@ -315,13 +337,17 @@ measures:
 - abstention rate
 - valid custom emoji selection
 - response-length and participation regressions
+- distance from human message-length, sentence-count, emoji, punctuation, and casing distributions
+- bounded person adaptation without phrase copying
 - human preference on naturalness, appropriateness, and personality consistency
 
 Initial rollout gates:
 
-- no exact inline emoji in consecutive assistant replies unless a labeled strong-context override
-- at least 60% reduction in repeated emoji-family windows from the production baseline
-- at least 70% reduction in adjacent em-dash cadence
+- candidate emoji rate within two percentage points of the held-out human rate
+- candidate em-dash rate no more than 0.5 percentage points above the held-out human rate
+- candidate multi-sentence rate within five percentage points of the held-out human rate
+- candidate median word count within two words of the held-out human median
+- repeated emoji and openings no higher than the held-out human rate
 - zero invalid or inaccessible custom emoji emitted
 - no statistically meaningful regression in participation or factual-answer fixtures
 - human reviewers prefer the candidate on naturalness without rating it less contextually suitable

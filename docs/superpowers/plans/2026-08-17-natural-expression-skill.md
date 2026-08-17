@@ -40,23 +40,25 @@
 - [ ] Implement immutable contracts, conservative situation scoring, and curated semantic families covering amusement, warmth, support, hype, skepticism, awkwardness, sadness, agreement, curiosity, and celebration.
 - [ ] Re-run the focused tests and commit with `feat(expression): add situation-aware emoji semantics`.
 
-### Task 2: Style ledger and contextual selection
+### Task 2: Human style profiles, style ledger, and contextual selection
 
 **Files:**
 - Create: `src/mika/conversation/skills/natural_expression/style_ledger.py`
+- Create: `src/mika/conversation/skills/natural_expression/human_style.py`
 - Create: `src/mika/conversation/skills/natural_expression/selector.py`
 - Create: `src/mika/conversation/skills/natural_expression/skill.py`
 - Test: `tests/conversation/skills/natural_expression/test_style_ledger.py`
+- Test: `tests/conversation/skills/natural_expression/test_human_style.py`
 - Test: `tests/conversation/skills/natural_expression/test_selector.py`
 
 **Interfaces:**
 - Consumes: Task 1 contracts and Unicode profiles.
-- Produces: `StyleLedger.observe(channel_id: str, reply: str, reactions: tuple[str, ...]) -> None`, `StyleLedger.snapshot(channel_id: str) -> StyleSnapshot`, `ExpressionSelector.select(...) -> ExpressionGuidance`, and `NaturalExpressionSkill.guide(...)` / `validate(...)`.
+- Produces: `analyze_messages(...) -> HumanStyleProfile`, `blend_profiles(...) -> HumanStyleProfile`, `StyleLedger.observe(channel_id: str, reply: str, reactions: tuple[str, ...]) -> None`, `StyleLedger.snapshot(channel_id: str) -> StyleSnapshot`, `ExpressionSelector.select(...) -> ExpressionGuidance`, and `NaturalExpressionSkill.guide(...)` / `validate(...)`.
 
-- [ ] Write failing tests for exact emoji cooldown, semantic-family cooldown, em-dash cooldown, repeated openings, quoted/code/URL exclusions, strong-context override, custom candidate ranking, and no-expression abstention.
+- [ ] Write failing tests for human message statistics, server/channel/person blending bounds, measured emoji prior, recent reuse, em-dash and repeated openings, quoted/code/URL exclusions, custom candidate ranking, and no-expression abstention.
 - [ ] Run both focused test modules and verify expected missing-symbol failures.
-- [ ] Implement bounded channel ledgers, Unicode grapheme extraction, punctuation/opening fingerprints, candidate scoring, and compact guidance rendering.
-- [ ] Implement validation that removes recently repeated inline emoji and em-dash cadence only when the decision did not authorize an override; preserve quoted text, code, and URLs.
+- [ ] Implement aggregate-only profiles, bounded channel ledgers, Unicode grapheme extraction, punctuation/opening fingerprints, candidate scoring, and compact guidance rendering.
+- [ ] Implement validation that normalizes conspicuous generated punctuation and removes unjustified emoji while preserving quoted text, code, URLs, and measured human reuse.
 - [ ] Re-run focused tests and commit with `feat(expression): add contextual style cooldowns`.
 
 ### Task 3: Guild emoji profiles and persistence
@@ -111,7 +113,7 @@
 - Modify: `dev_docs/MIKAV2-CHANGELOG.md`
 
 **Interfaces:**
-- Produces: deterministic baseline/candidate reports containing exact-repeat rate, family-repeat windows, adjacent em-dash cadence, abstention, invalid-custom-emoji count, and per-case failures.
+- Produces: deterministic baseline/candidate reports containing distribution distance for message length, sentence count, emoji, casing, punctuation, exact/family repetition, abstention, invalid-custom-emoji count, and per-case failures.
 
 - [ ] Write failing benchmark tests using held-out English/Spanish, joking, flirting, criticism, support, serious, media, Unicode, and custom-emoji cases derived from production patterns without copying private message text.
 - [ ] Verify the benchmark test fails because scoring and runner are absent.
@@ -119,4 +121,3 @@
 - [ ] Run `uv run pytest tests/conversation/evaluation/test_expression_benchmark.py -q` and the benchmark CLI; save and inspect baseline/candidate metrics.
 - [ ] Run `make check`, `git diff --check`, and the benchmark CLI again from the final tree.
 - [ ] Update documentation with measured results and commit with `feat(expression): benchmark natural conversation style`.
-
