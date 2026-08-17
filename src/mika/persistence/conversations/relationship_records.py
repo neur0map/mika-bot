@@ -41,6 +41,21 @@ class EvidenceWrite:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimEvidenceRecord:
+    """Stored evidence identity and policy attribution for consolidation."""
+
+    claim_id: str
+    source_kind: str
+    source_id: str
+    source_message_id: str
+    source_timestamp: datetime
+    visibility_kind: str
+    guild_id: str | None
+    channel_id: str | None
+    policy_version_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class ClaimRecord:
     """Stored claim plus its deduplicated source summary."""
 

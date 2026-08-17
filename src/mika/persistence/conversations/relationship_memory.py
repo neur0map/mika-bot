@@ -41,6 +41,7 @@ from mika.persistence.conversations.relationship_models import (
 from mika.persistence.conversations.relationship_records import (
     ArchiveCursor,
     ArchiveSourceRecord,
+    ClaimEvidenceRecord,
     ClaimRecord,
     ClaimWrite,
     EvidenceWrite,
@@ -169,6 +170,49 @@ class RelationshipMemoryRepository:
         )
         return [
             await claim_record(self._session, row)
+            for row in (await self._session.scalars(statement)).all()
+        ]
+
+    async def claims_for_subject(
+        self, subject_user_id: str, *, limit: int = 1000
+    ) -> list[ClaimRecord]:
+        """Return bounded lifecycle history for one subject during consolidation."""
+        statement = (
+            select(StoredClaim)
+            .where(StoredClaim.subject_user_id == subject_user_id)
+            .order_by(StoredClaim.first_observed_at, StoredClaim.claim_id)
+            .limit(limit)
+        )
+        return [
+            await claim_record(self._session, row)
+            for row in (await self._session.scalars(statement)).all()
+        ]
+
+    async def evidence_for_claims(self, claim_ids: Sequence[str]) -> list[ClaimEvidenceRecord]:
+        """Return bounded primitive evidence rows for the supplied claim identities."""
+        if not claim_ids:
+            return []
+        statement = (
+            select(StoredClaimEvidence)
+            .where(StoredClaimEvidence.claim_id.in_(tuple(claim_ids)))
+            .order_by(
+                StoredClaimEvidence.source_timestamp,
+                StoredClaimEvidence.source_message_id,
+                StoredClaimEvidence.id,
+            )
+        )
+        return [
+            ClaimEvidenceRecord(
+                row.claim_id,
+                row.source_kind,
+                row.source_id,
+                row.source_message_id,
+                row.source_timestamp,
+                row.visibility_kind,
+                row.guild_id,
+                row.channel_id,
+                row.policy_version_id,
+            )
             for row in (await self._session.scalars(statement)).all()
         ]
 

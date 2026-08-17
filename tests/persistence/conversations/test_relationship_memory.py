@@ -239,6 +239,27 @@ async def test_claim_recall_is_scoped_before_returning_rows(tmp_path: Path) -> N
         await engine.dispose()
 
 
+async def test_claim_history_and_evidence_reads_include_candidate_lifecycle(tmp_path: Path) -> None:
+    repository, engine = await _repository(tmp_path / "memory.db")
+    try:
+        await repository.write_policy_version(_policy())
+        await repository.add_evidence(_claim("candidate"), _evidence("message-1"))
+        await repository.add_evidence(_claim("candidate"), _evidence("message-2"))
+
+        claims = await repository.claims_for_subject("user-1")
+        evidence = await repository.evidence_for_claims(["candidate"])
+
+        assert [(item.claim_id, item.state, item.observation_count) for item in claims] == [
+            ("candidate", "candidate", 2)
+        ]
+        assert [item.source_message_id for item in evidence] == ["message-1", "message-2"]
+        assert all(item.claim_id == "candidate" for item in evidence)
+        assert all(item.policy_version_id == "policy-1" for item in evidence)
+    finally:
+        await repository.close()
+        await engine.dispose()
+
+
 async def test_recall_feedback_is_idempotent_and_cannot_mutate_claim_truth(tmp_path: Path) -> None:
     repository, engine = await _repository(tmp_path / "memory.db")
     try:
