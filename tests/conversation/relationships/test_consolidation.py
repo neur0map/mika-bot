@@ -105,6 +105,49 @@ def test_candidate_promotes_only_from_diverse_supported_observations() -> None:
     assert result.profile.interests[0].claim_ids == ("tea",)
 
 
+def test_noncanonical_evidence_promotes_a_normalized_candidate() -> None:
+    """Evidence formatting differences cannot block a same-key activation decision."""
+    candidate = claim(
+        "tea",
+        key=" Preference: Tea ",
+        value="tea",
+        evidence_class="reaction",
+        state="candidate",
+    )
+
+    result = RelationshipConsolidator().consolidate(
+        [candidate],
+        evidence_by_key={
+            " PREFERENCE: TEA ": (
+                evidence(
+                    "message-1",
+                    BASE_TIME,
+                    key=" PREFERENCE: TEA ",
+                    value=" tea ",
+                    evidence_class="reaction",
+                ),
+                evidence(
+                    "message-2",
+                    BASE_TIME + timedelta(days=1),
+                    key=" PREFERENCE: TEA ",
+                    value=" tea ",
+                    evidence_class="reaction",
+                ),
+                evidence(
+                    "message-3",
+                    BASE_TIME + timedelta(days=2),
+                    key=" PREFERENCE: TEA ",
+                    value=" tea ",
+                    evidence_class="reaction",
+                ),
+            )
+        },
+        now=BASE_TIME + timedelta(days=2),
+    )
+
+    assert result.claims[0].state == "active"
+
+
 def test_temporal_contradictions_remain_visible_without_a_replacement_link() -> None:
     """Conflicting facts stay in the profile until a correction identifies its target."""
     result = RelationshipConsolidator().consolidate(
@@ -181,6 +224,24 @@ def test_canonical_rerun_is_a_stable_no_op() -> None:
     assert rerun.profile.version == 1
 
 
+def test_equal_timestamps_have_canonical_order_independent_of_input_order() -> None:
+    """Reordered equal-time claims reuse the predecessor instead of versioning noise."""
+    consolidator = RelationshipConsolidator()
+    tea = claim("tea", value="tea")
+    coffee = claim("coffee", value="coffee")
+    first = consolidator.consolidate([tea, coffee], now=BASE_TIME)
+    assert first.profile is not None
+
+    rerun = consolidator.consolidate(
+        [coffee, tea],
+        predecessor=first.profile,
+        now=BASE_TIME,
+    )
+
+    assert rerun.changed is False
+    assert rerun.profile is first.profile
+
+
 def test_lossy_candidate_keeps_predecessor_and_salvages_new_validated_entries() -> None:
     """Protected predecessor entries cannot disappear during a partial consolidation."""
     consolidator = RelationshipConsolidator()
@@ -227,3 +288,24 @@ def test_superseded_or_expired_predecessor_fact_may_leave_the_overview() -> None
     assert result.rejected is False
     assert result.profile is not None
     assert result.profile.interests[0].claim_ids == ("replacement",)
+
+
+def test_terminal_duplicate_predecessor_claim_is_removed_without_false_rollback() -> None:
+    """Duplicate merging cannot hide a terminal predecessor lifecycle state."""
+    consolidator = RelationshipConsolidator()
+    initial = consolidator.consolidate(
+        [claim("live"), claim("terminal")],
+        now=BASE_TIME,
+    )
+    assert initial.profile is not None
+
+    result = consolidator.consolidate(
+        [claim("live"), claim("terminal", state="superseded")],
+        predecessor=initial.profile,
+        now=BASE_TIME + timedelta(days=1),
+    )
+
+    assert result.rejected is False
+    assert result.salvaged_claim_ids == ()
+    assert result.profile is not None
+    assert result.profile.interests[0].claim_ids == ("live",)

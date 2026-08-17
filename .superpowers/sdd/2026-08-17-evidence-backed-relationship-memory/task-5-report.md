@@ -28,3 +28,24 @@ would be lost. Runtime and persistence integration remain intentionally out of s
 ## Concerns
 
 None. The unrelated `AGENTS.md` worktree modification was preserved.
+
+## Fix Round 1
+
+### RED
+
+Three new regression tests failed before the fix:
+
+- Noncanonical evidence key/value formatting left a normalized reaction candidate in `candidate`.
+- Reversing equal-timestamp claims produced a spurious profile version.
+- A terminal duplicate predecessor claim caused a false rollback rejection and duplicate salvage.
+
+### GREEN
+
+- `uv run pytest tests/conversation/relationships/test_consolidation.py -q` — 11 passed.
+- `uv run pytest tests/conversation/relationships -q` — 46 passed.
+- `make lint` — passed.
+- `make types` — passed.
+
+Evidence proposals are normalized before activation, profile entry ordering now has deterministic
+secondary keys, and duplicate merge output retains every claim lifecycle state for claim-granular
+predecessor protection.

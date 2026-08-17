@@ -70,8 +70,16 @@ def _normalized_evidence(
 ) -> dict[str, tuple[EvidenceProposal, ...]]:
     grouped: dict[str, list[EvidenceProposal]] = defaultdict(list)
     for key, evidence in evidence_by_key.items():
-        grouped[_normalized(key)].extend(evidence)
+        grouped[_normalized(key)].extend(_normalize_evidence(item) for item in evidence)
     return {key: tuple(items) for key, items in grouped.items()}
+
+
+def _normalize_evidence(evidence: EvidenceProposal) -> EvidenceProposal:
+    return replace(
+        evidence,
+        key=_normalized(evidence.key),
+        value=_normalized_value(evidence.value),
+    )
 
 
 def _normalize_claim(
@@ -118,7 +126,7 @@ def _merge_duplicate_support(claims: Sequence[RelationshipClaim]) -> tuple[Relat
     groups: dict[tuple[str, str, str, str], list[RelationshipClaim]] = defaultdict(list)
     for claim in claims:
         groups[_duplicate_key(claim)].append(claim)
-    merged = [_merge_group(group) for group in groups.values()]
+    merged = [claim for group in groups.values() for claim in _merge_group(group)]
     return tuple(sorted(merged, key=lambda claim: claim.claim_id))
 
 
@@ -126,10 +134,10 @@ def _duplicate_key(claim: RelationshipClaim) -> tuple[str, str, str, str]:
     return (claim.subject_user_id, claim.kind, claim.key, claim.value)
 
 
-def _merge_group(group: Sequence[RelationshipClaim]) -> RelationshipClaim:
+def _merge_group(group: Sequence[RelationshipClaim]) -> tuple[RelationshipClaim, ...]:
     winner = min(group, key=_merge_preference)
     sources = tuple(sorted({source for claim in group for source in claim.source_message_ids}))
-    return replace(
+    merged_winner = replace(
         winner,
         confidence=max(claim.confidence for claim in group),
         source_message_ids=sources,
@@ -137,6 +145,7 @@ def _merge_group(group: Sequence[RelationshipClaim]) -> RelationshipClaim:
         first_observed_at=min(claim.first_observed_at for claim in group),
         last_observed_at=max(claim.last_observed_at for claim in group),
     )
+    return tuple(merged_winner if claim.claim_id == winner.claim_id else claim for claim in group)
 
 
 def _merge_preference(claim: RelationshipClaim) -> tuple[int, int, int, str]:
@@ -187,9 +196,20 @@ def _entries_for_claims(
         grouped[(_profile_layer(claim), claim.key, claim.value)].append(claim)
     return tuple(
         (layer, _entry_for_group(group))
-        for (layer, _, _), group in sorted(
-            grouped.items(), key=lambda item: min(claim.first_observed_at for claim in item[1])
-        )
+        for (layer, _, _), group in sorted(grouped.items(), key=_entry_order)
+    )
+
+
+def _entry_order(
+    item: tuple[tuple[str, str, str], list[RelationshipClaim]],
+) -> tuple[datetime, str, str, str, tuple[str, ...]]:
+    (layer, key, value), claims = item
+    return (
+        min(claim.first_observed_at for claim in claims),
+        layer,
+        key,
+        value,
+        tuple(sorted(claim.claim_id for claim in claims)),
     )
 
 
@@ -271,10 +291,15 @@ def _missing_protected_entries(
     )
     states = {claim.claim_id: claim.state for claim in claims}
     return tuple(
-        entry
+        ProfileEntry(entry.key, entry.value, missing_ids)
         for entry in predecessor.entries
-        if any(states.get(claim_id) not in _TERMINAL_STATES for claim_id in entry.claim_ids)
-        and not set(entry.claim_ids).issubset(visible)
+        if (
+            missing_ids := tuple(
+                claim_id
+                for claim_id in entry.claim_ids
+                if states.get(claim_id) not in _TERMINAL_STATES and claim_id not in visible
+            )
+        )
     )
 
 
