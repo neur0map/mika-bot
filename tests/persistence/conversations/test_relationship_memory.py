@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -49,6 +50,7 @@ from mika.persistence.conversations.relationship_models import (
 from mika.persistence.conversations.relationship_records import (
     ArchiveCursor,
     ArchiveSourceRecord,
+    ProfileClaimLinkRecord,
     RecallEventWrite,
     RecallFeedbackWrite,
 )
@@ -126,18 +128,19 @@ async def test_profile_and_policy_versions_are_immutable_with_atomic_heads(tmp_p
         await repository.write_policy_version(_policy())
         await repository.write_policy_version(_policy("policy-2"))
         assert (await repository.active_policy_version()) == _policy("policy-2")
+        await repository.add_evidence(_claim("claim-1"), _evidence("source-1"))
+        await repository.activate_claim("claim-1", confirmed_at=NOW)
+        links = (ProfileClaimLinkRecord("claim-1", "interests", 0),)
+        first = replace(_profile("profile-1", "first overview"), claim_links=links)
+        second = replace(_profile("profile-2", "second overview"), claim_links=links)
 
-        await repository.write_profile_version(_profile("profile-1", "first overview"))
-        await repository.write_profile_version(_profile("profile-2", "second overview"))
-        assert (await repository.active_profile("user-1")) == _profile(
-            "profile-2", "second overview"
-        )
+        await repository.write_profile_version(first)
+        await repository.write_profile_version(second)
+        assert (await repository.active_profile("user-1")) == second
 
         with pytest.raises(ValueError, match="profile version already exists"):
-            await repository.write_profile_version(_profile("profile-1", "mutated overview"))
-        assert (await repository.active_profile("user-1")) == _profile(
-            "profile-2", "second overview"
-        )
+            await repository.write_profile_version(replace(first, overview_text="mutated overview"))
+        assert (await repository.active_profile("user-1")) == second
 
         with pytest.raises(ValueError, match="policy version already exists"):
             await repository.write_policy_version(_policy())
@@ -364,7 +367,12 @@ async def test_deleting_user_memory_removes_all_derived_rows_only(tmp_path: Path
         await repository.write_policy_version(_policy())
         await repository.add_evidence(_claim("claim-1"), _evidence("source-1"))
         await repository.activate_claim("claim-1", confirmed_at=NOW)
-        await repository.write_profile_version(_profile("profile-1", "overview"))
+        await repository.write_profile_version(
+            replace(
+                _profile("profile-1", "overview"),
+                claim_links=(ProfileClaimLinkRecord("claim-1", "interests", 0),),
+            )
+        )
         await repository.advance_cursor(ArchiveCursor("weekly", NOW, "1", "policy-1", NOW))
         await repository.record_recall(_recall_event())
         await repository.record_recall_feedback(

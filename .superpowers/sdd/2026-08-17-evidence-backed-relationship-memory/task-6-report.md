@@ -131,3 +131,36 @@ pytest: 545 passed, 2 warnings in 56.27s
 
 The two warnings are the existing discord.py `audioop` and FastAPI/Starlette `httpx`
 deprecations.
+
+## Slice A repair 2 review round 2: complete structured membership
+
+### RED
+
+- Identical rendered content with a second active supporting claim was treated as a no-op because
+  publication compared only profile text and policy. The active head retained only the original
+  link, so a later original-to-disputed transition failed the active-profile invariant instead of
+  leaving the replacement visible.
+- Persistence accepted new nonempty profiles without claim links, leaving them impossible to
+  reconstruct without parsing display text.
+- A seeded legacy nonempty, unlinked profile containing `Tea; coffee` failed predecessor recovery
+  because its empty structured membership could only reconstruct an empty profile.
+
+### GREEN
+
+- Profile no-op detection now compares canonical claim-link membership as well as rendered content
+  and policy. Membership-only changes publish a new head, and later demotion removes only the
+  affected claim while duplicate active support remains linked.
+- New nonempty profile writes require structured claim links; empty profiles may remain unlinked.
+- Legacy nonempty, unlinked heads are rebuilt canonically from complete claim and evidence history,
+  verified against the exact stored index and overview, and then atomically republished with
+  structured links. Display delimiters are never parsed.
+
+Verification:
+
+```text
+Focused service, retrieval, and consolidation suites: 30 passed
+Focused persistence suites: 29 passed
+ruff check: All checks passed!
+ruff format --check: 5 files already formatted
+mypy changed source files: Success: no issues found in 2 source files
+```

@@ -99,7 +99,10 @@ async def test_profile_publication_commits_lifecycle_visibility_together(
         await memory.activate_claim("superseded", confirmed_at=NOW)
 
         await memory.publish_consolidation(
-            profile("profile-1", "Interests: favorite_game: Hades"),
+            replace(
+                profile("profile-1", "Interests: favorite_game: Hades"),
+                claim_links=(ProfileClaimLinkRecord("promoted", "interests", 0),),
+            ),
             (
                 ClaimTransitionRecord("promoted", "candidate", "active", NOW),
                 ClaimTransitionRecord("expired", "candidate", "expired", NOW),
@@ -138,7 +141,12 @@ async def test_failed_profile_publication_rolls_back_lifecycle_transitions(
     try:
         await memory.write_policy_version(policy())
         await memory.add_evidence(claim("candidate"), evidence("source-candidate"))
-        original = profile("profile-1", "original overview")
+        await memory.add_evidence(claim("stable"), evidence("source-stable"))
+        await memory.activate_claim("stable", confirmed_at=NOW)
+        original = replace(
+            profile("profile-1", "original overview"),
+            claim_links=(ProfileClaimLinkRecord("stable", "interests", 0),),
+        )
         await memory.write_profile_version(original)
 
         with pytest.raises(ValueError, match="profile version already exists"):
@@ -200,6 +208,21 @@ async def test_same_policy_content_reversion_reuses_profile_and_commits_transiti
         promoted = await memory.claim("promoted-on-revert")
         assert active == first
         assert promoted is not None and promoted.state == "active"
+    finally:
+        await memory.close()
+        await engine.dispose()
+
+
+async def test_new_nonempty_profile_requires_structured_claim_links(tmp_path: Path) -> None:
+    """A new rendered profile cannot be persisted without reconstructable membership."""
+    memory, engine = await repository(tmp_path / "memory.db")
+    try:
+        await memory.write_policy_version(policy())
+
+        with pytest.raises(ValueError, match="nonempty profile requires claim links"):
+            await memory.write_profile_version(profile("unlinked", "Interests: favorite: Tea"))
+
+        assert await memory.active_profile("user-1") is None
     finally:
         await memory.close()
         await engine.dispose()

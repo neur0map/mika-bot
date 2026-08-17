@@ -33,7 +33,10 @@ from mika.conversation.relationships.service import RelationshipMemoryService
 from mika.persistence.conversations.relationship_models import (
     StoredClaim,
     StoredClaimEvidence,
+    StoredProfileHead,
+    StoredProfileVersion,
 )
+from mika.persistence.conversations.relationship_records import ProfileClaimLinkRecord
 
 NOW = observation("fixture").created_at
 
@@ -52,6 +55,31 @@ class LossyConsolidator(RelationshipConsolidator):
     ) -> ConsolidationResult:
         return super().consolidate(
             tuple(item for item in claims if item.claim_id != "anchor"),
+            evidence_by_key,
+            evidence_by_claim_id=evidence_by_claim_id,
+            predecessor=predecessor,
+            now=now,
+        )
+
+
+class DisputingOriginalConsolidator(RelationshipConsolidator):
+    """Demote one duplicate while leaving its replacement prompt-active."""
+
+    def consolidate(
+        self,
+        claims: Sequence[RelationshipClaim],
+        evidence_by_key: Mapping[str, Sequence[EvidenceProposal]] | None = None,
+        *,
+        evidence_by_claim_id: Mapping[str, Sequence[EvidenceProposal]] | None = None,
+        predecessor: RelationshipProfile | None = None,
+        now: datetime,
+    ) -> ConsolidationResult:
+        updated = tuple(
+            replace(claim, state="disputed") if claim.claim_id == "original" else claim
+            for claim in claims
+        )
+        return super().consolidate(
+            updated,
             evidence_by_key,
             evidence_by_claim_id=evidence_by_claim_id,
             predecessor=predecessor,
@@ -255,6 +283,118 @@ async def test_predecessor_profile_round_trips_delimiter_values_losslessly(tmp_p
         assert first.profile_changed is True
         assert second.profile_changed is False
         assert active is not None and "Tea; coffee" in active.overview_text
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_same_rendered_profile_republishes_changed_claim_membership(tmp_path: Path) -> None:
+    """Duplicate support updates links so one member can later be demoted safely."""
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        original = claim_write(
+            "original",
+            key="preference:drink",
+            value="Tea",
+            evidence_class="explicit",
+            guild_id="guild-1",
+            channel_id="channel-1",
+        )
+        replacement = replace(original, claim_id="replacement")
+        await store.add_evidence(
+            original,
+            evidence_write("original-source", guild_id="guild-1", channel_id="channel-1"),
+        )
+        await store.activate_claim("original", confirmed_at=NOW)
+        await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+        await store.add_evidence(
+            replacement,
+            evidence_write("replacement-source", guild_id="guild-1", channel_id="channel-1"),
+        )
+        await store.activate_claim("replacement", confirmed_at=NOW + timedelta(minutes=1))
+
+        expanded = await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+        expanded_profile = await store.active_profile("user-1")
+
+        disputing_service = RelationshipMemoryService(
+            repository=store,
+            extractor=Extractor(),
+            activation_policy=ActivationPolicy(),
+            classifier=Classifier(),
+            retriever=Retriever(store),
+            consolidator=DisputingOriginalConsolidator(),
+            clock=lambda: NOW + timedelta(minutes=5),
+        )
+        await disputing_service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+
+        active = await store.active_profile("user-1")
+        original_record = await store.claim("original")
+        replacement_record = await store.claim("replacement")
+        assert expanded.profile_changed is True
+        assert expanded_profile is not None
+        assert {link.claim_id for link in expanded_profile.claim_links} == {
+            "original",
+            "replacement",
+        }
+        assert original_record is not None and original_record.state == "disputed"
+        assert replacement_record is not None and replacement_record.state == "active"
+        assert active is not None
+        assert [link.claim_id for link in active.claim_links] == ["replacement"]
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_legacy_unlinked_profile_is_republished_with_canonical_links(tmp_path: Path) -> None:
+    """Legacy rendered content upgrades from complete claims without delimiter parsing."""
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        preference = claim_write(
+            "legacy-claim",
+            key="preference:drink",
+            value="Tea; coffee",
+            evidence_class="explicit",
+            guild_id="guild-1",
+            channel_id="channel-1",
+        )
+        await store.add_evidence(
+            preference,
+            evidence_write("legacy-source", guild_id="guild-1", channel_id="channel-1"),
+        )
+        await store.activate_claim("legacy-claim", confirmed_at=NOW)
+        async with inspection_factory(engine)() as inspection:
+            inspection.add(
+                StoredProfileVersion(
+                    profile_version_id="legacy-profile",
+                    subject_user_id="user-1",
+                    index_text="preference:drink: Tea; coffee",
+                    overview_text="Interests: preference:drink: Tea; coffee",
+                    schema_version="relationship-profile-v1",
+                    generator_version="deterministic-v1",
+                    policy_version_id="policy-1",
+                    created_at=NOW + timedelta(minutes=1),
+                )
+            )
+            inspection.add(
+                StoredProfileHead(subject_user_id="user-1", profile_version_id="legacy-profile")
+            )
+            await inspection.commit()
+
+        result = await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+
+        active = await store.active_profile("user-1")
+        assert result.profile_changed is True
+        assert active is not None and active.profile_version_id != "legacy-profile"
+        assert active.claim_links == (ProfileClaimLinkRecord("legacy-claim", "interests", 0),)
+        assert active.overview_text == "Interests: preference:drink: Tea; coffee"
     finally:
         await store.close()
         await engine.dispose()

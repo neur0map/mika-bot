@@ -124,6 +124,8 @@ async def _stage_profile(session: AsyncSession, record: ProfileVersionRecord) ->
 
 
 async def _validate_links(session: AsyncSession, record: ProfileVersionRecord) -> None:
+    if not record.claim_links and (record.index_text.strip() or record.overview_text.strip()):
+        raise ValueError("nonempty profile requires claim links")
     seen: set[str] = set()
     for link in record.claim_links:
         if link.claim_id in seen:

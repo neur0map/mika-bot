@@ -256,13 +256,19 @@ class RelationshipMemoryService:
             await self._repository.evidence_for_claims([item.claim_id for item in records])
         )
         active_profile = await self._repository.active_profile(subject_user_id)
+        now = self._clock()
+        evidence_by_claim_id = _evidence_by_claim(records, evidence)
+        predecessor = _predecessor_profile(
+            active_profile,
+            records,
+            evidence_by_claim_id,
+            now,
+        )
         result = self._consolidator.consolidate(
             tuple(_relationship_claim(item) for item in records),
-            evidence_by_claim_id=_evidence_by_claim(records, evidence),
-            predecessor=(
-                None if active_profile is None else _relationship_profile(active_profile, records)
-            ),
-            now=self._clock(),
+            evidence_by_claim_id=evidence_by_claim_id,
+            predecessor=predecessor,
+            now=now,
         )
         return await self._publish_profile(
             subject_user_id, policy.policy_version_id, records, result
@@ -348,6 +354,7 @@ class RelationshipMemoryService:
     ) -> ConsolidationRun:
         profile = result.profile
         active = await self._repository.active_profile(subject_user_id)
+        claim_links = () if profile is None else _profile_claim_links(profile)
         unchanged = (
             profile is not None
             and active is not None
@@ -355,12 +362,17 @@ class RelationshipMemoryService:
                 active.index_text,
                 active.overview_text,
                 active.policy_version_id,
+                tuple(sorted(active.claim_links, key=_profile_link_key)),
             )
-            == (profile.index_text, profile.overview_text, policy_version_id)
+            == (
+                profile.index_text,
+                profile.overview_text,
+                policy_version_id,
+                tuple(sorted(claim_links, key=_profile_link_key)),
+            )
         )
         record = None
         if profile is not None and not unchanged:
-            claim_links = _profile_claim_links(profile)
             version_id = _stable_id(
                 "profile",
                 subject_user_id,
@@ -510,6 +522,33 @@ def _relationship_profile(
     return profile
 
 
+def _predecessor_profile(
+    record: ProfileVersionRecord | None,
+    claims: Sequence[ClaimRecord],
+    evidence_by_claim_id: Mapping[str, Sequence[EvidenceProposal]],
+    now: datetime,
+) -> RelationshipProfile | None:
+    if record is None:
+        return None
+    if record.claim_links or not (record.index_text.strip() or record.overview_text.strip()):
+        return _relationship_profile(record, claims)
+    rebuilt = (
+        RelationshipConsolidator()
+        .consolidate(
+            tuple(_relationship_claim(claim) for claim in claims),
+            evidence_by_claim_id=evidence_by_claim_id,
+            now=now,
+        )
+        .profile
+    )
+    if rebuilt is None or (rebuilt.index_text, rebuilt.overview_text) != (
+        record.index_text,
+        record.overview_text,
+    ):
+        raise ValueError("legacy relationship profile cannot be reconstructed from claim history")
+    return rebuilt
+
+
 def _profile_claim_links(profile: RelationshipProfile) -> tuple[ProfileClaimLinkRecord, ...]:
     layers = (
         ("posture", profile.posture),
@@ -525,6 +564,10 @@ def _profile_claim_links(profile: RelationshipProfile) -> tuple[ProfileClaimLink
         for position, entry in enumerate(layer_entries)
         for claim_id in entry.claim_ids
     )
+
+
+def _profile_link_key(link: ProfileClaimLinkRecord) -> tuple[str, int, str]:
+    return (link.layer, link.position, link.claim_id)
 
 
 def _ordered_entries(entries: Sequence[tuple[int, ProfileEntry]]) -> tuple[ProfileEntry, ...]:
