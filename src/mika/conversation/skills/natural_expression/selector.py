@@ -49,9 +49,7 @@ class ExpressionSelector:
                 if score >= _MIN_CANDIDATE_SCORE:
                     ranked.append(ExpressionCandidate(profile, score, "situation_match"))
         ranked.sort(key=lambda item: item.score, reverse=True)
-        guided_situation = (
-            replace(situation, emoji_mode="encouraged") if ranked else situation
-        )
+        guided_situation = replace(situation, emoji_mode="encouraged") if ranked else situation
         return ExpressionGuidance(
             situation=guided_situation,
             candidates=tuple(ranked[:3]),
