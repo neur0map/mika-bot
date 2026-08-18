@@ -7,6 +7,7 @@ import contextlib
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import uuid4
 
 import discord
@@ -134,10 +135,12 @@ class _ServiceRetriever:
 
 
 class _OperationSink:
+    cancellation_cooperative: Literal[True] = True
+
     def __init__(self, repository: ManagedRelationshipMemory) -> None:
         self._repository = repository
 
-    async def __call__(self, record: RelationshipOperationRecord) -> None:
+    async def write(self, record: RelationshipOperationRecord) -> None:
         await self._repository.record_operation_write(
             RelationshipOperationWrite(
                 record.operation,

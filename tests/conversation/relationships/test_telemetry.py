@@ -1,12 +1,37 @@
 """Content-free relationship operation telemetry."""
 
 import asyncio
-import subprocess
-import sys
-import textwrap
 from time import monotonic
 
+import pytest
+
 from mika.conversation.relationships.telemetry import RelationshipTelemetry
+
+
+class _CooperativeSink:
+    cancellation_cooperative = True
+
+    def __init__(self, write) -> None:
+        self._write = write
+
+    async def write(self, record: object) -> None:
+        await self._write(record)
+
+
+def test_telemetry_rejects_sink_without_cancellation_contract() -> None:
+    async def arbitrary_callable(record: object) -> None:
+        del record
+
+    with pytest.raises(TypeError, match="cancellation-cooperative"):
+        RelationshipTelemetry(sink=arbitrary_callable)
+
+
+def test_telemetry_rejects_contract_marker_without_write_method() -> None:
+    class InvalidSink:
+        cancellation_cooperative = True
+
+    with pytest.raises(TypeError, match="async write"):
+        RelationshipTelemetry(sink=InvalidSink())
 
 
 def test_telemetry_hashes_correlation_and_keeps_only_operational_fields() -> None:
@@ -41,7 +66,7 @@ async def test_telemetry_persists_actual_operation_records() -> None:
     async def save(record: object) -> None:
         saved.append(record)
 
-    telemetry = RelationshipTelemetry(sink=save)
+    telemetry = RelationshipTelemetry(sink=_CooperativeSink(save))
     telemetry.emit(
         "retrieval",
         "fallback",
@@ -72,7 +97,7 @@ async def test_telemetry_uses_one_worker_retries_and_flushes_deterministically()
             raise RuntimeError("temporary")
         saved.append(record)
 
-    telemetry = RelationshipTelemetry(sink=flaky_save)
+    telemetry = RelationshipTelemetry(sink=_CooperativeSink(flaky_save))
     for correlation in ("one", "two"):
         telemetry.emit(
             "retrieval",
@@ -105,7 +130,7 @@ async def test_telemetry_close_bounds_a_wedged_sink_and_accounts_pending_work() 
         await wedged.wait()
 
     telemetry = RelationshipTelemetry(
-        sink=never_returns,
+        sink=_CooperativeSink(never_returns),
         sink_timeout_seconds=0.01,
         close_timeout_seconds=0.05,
     )
@@ -133,17 +158,19 @@ async def test_telemetry_close_bounds_a_wedged_sink_and_accounts_pending_work() 
     assert telemetry.pending_sink_records == 0
 
 
-async def test_telemetry_close_abandons_sink_that_suppresses_cancellation() -> None:
-    async def ignores_cancellation(record: object) -> None:
+async def test_telemetry_awaits_cooperative_sink_cleanup_when_write_times_out() -> None:
+    cleanup_completed = asyncio.Event()
+
+    async def slow_write(record: object) -> None:
         del record
-        while True:
-            try:
-                await asyncio.sleep(3600)
-            except asyncio.CancelledError:
-                continue
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            cleanup_completed.set()
 
     telemetry = RelationshipTelemetry(
-        sink=ignores_cancellation,
+        sink=_CooperativeSink(slow_write),
         sink_timeout_seconds=0.01,
         close_timeout_seconds=0.05,
     )
@@ -165,48 +192,5 @@ async def test_telemetry_close_abandons_sink_that_suppresses_cancellation() -> N
     await telemetry.close()
 
     assert monotonic() - started < 0.5
+    assert cleanup_completed.is_set()
     assert telemetry.pending_sink_records == 0
-
-
-def test_cancellation_resistant_sink_cannot_hold_interpreter_open() -> None:
-    program = textwrap.dedent(
-        """
-        import asyncio
-        import threading
-        from mika.conversation.relationships.telemetry import RelationshipTelemetry
-
-        async def ignores_cancellation(record):
-            while True:
-                try:
-                    await asyncio.sleep(3600)
-                except asyncio.CancelledError:
-                    continue
-
-        async def main():
-            telemetry = RelationshipTelemetry(
-                sink=ignores_cancellation,
-                sink_timeout_seconds=0.01,
-                close_timeout_seconds=0.05,
-            )
-            telemetry.emit(
-                "retrieval", "ok", correlation_id="wedged", duration_ms=1,
-                candidate_count=0, selected_count=0, rejected_count=0,
-                estimated_tokens=0, fallback_reason=None, profile_changed=None,
-                policy_version_id="policy-1",
-            )
-            await telemetry.close()
-            assert [thread.name for thread in threading.enumerate()] == ["MainThread"]
-
-        asyncio.run(main())
-        """
-    )
-
-    result = subprocess.run(  # noqa: S603 - fixed interpreter and test-only source
-        [sys.executable, "-c", program],
-        capture_output=True,
-        text=True,
-        timeout=1,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr

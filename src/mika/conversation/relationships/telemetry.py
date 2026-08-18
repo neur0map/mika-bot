@@ -6,9 +6,10 @@ import asyncio
 import contextlib
 import hashlib
 from collections import deque
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal, Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +31,16 @@ class RelationshipOperationRecord:
     created_at: datetime
 
 
+class RelationshipTelemetrySink(Protocol):
+    """Durable sink that promptly completes cleanup when its write is cancelled."""
+
+    cancellation_cooperative: Literal[True]
+
+    async def write(self, record: RelationshipOperationRecord) -> None:
+        """Persist one record, allowing cancellation to propagate after cleanup."""
+        ...
+
+
 class RelationshipTelemetry:
     """Retain a bounded process-local window of privacy-safe operation records."""
 
@@ -37,7 +48,7 @@ class RelationshipTelemetry:
         self,
         *,
         capacity: int = 1000,
-        sink: Callable[[RelationshipOperationRecord], Awaitable[None]] | None = None,
+        sink: RelationshipTelemetrySink | None = None,
         sink_timeout_seconds: float = 1.0,
         close_timeout_seconds: float = 5.0,
     ) -> None:
@@ -47,6 +58,10 @@ class RelationshipTelemetry:
             raise ValueError("telemetry sink timeout must be positive")
         if close_timeout_seconds <= 0:
             raise ValueError("telemetry close timeout must be positive")
+        if sink is not None and getattr(sink, "cancellation_cooperative", False) is not True:
+            raise TypeError("telemetry sink must declare a cancellation-cooperative contract")
+        if sink is not None and not callable(getattr(sink, "write", None)):
+            raise TypeError("telemetry sink must provide an async write method")
         self._records: deque[RelationshipOperationRecord] = deque(maxlen=capacity)
         self._sink = sink
         self._sink_timeout_seconds = sink_timeout_seconds
@@ -182,47 +197,27 @@ class RelationshipTelemetry:
                     self._active_record = None
 
     async def _invoke_sink_bounded(self, record: RelationshipOperationRecord) -> None:
-        """Run an untrusted sink with a hard application-shutdown boundary.
-
-        An arbitrary coroutine can catch ``CancelledError`` forever.  Keeping such
-        a coroutine on the application loop would make ``asyncio.run`` wait for it
-        during shutdown. Normal sinks retain the caller's event loop and resources;
-        only an already-cancelled sink that exceeds its deadline is abandoned.
-        """
+        """Run a cooperative sink and give cancellation cleanup a bounded grace."""
         assert self._sink is not None
-
-        async def invoke() -> None:
-            assert self._sink is not None
-            await self._sink(record)
-
         sink_task: asyncio.Task[None] = asyncio.create_task(
-            invoke(), name="relationship-telemetry-write"
+            self._sink.write(record), name="relationship-telemetry-write"
         )
         try:
             done, _ = await asyncio.wait({sink_task}, timeout=self._sink_timeout_seconds)
             if sink_task not in done:
                 sink_task.cancel()
-                self._abandon_if_cancellation_is_suppressed(sink_task)
+                await self._wait_for_sink_cleanup(sink_task)
                 raise TimeoutError("telemetry sink timed out")
             sink_task.result()
         except asyncio.CancelledError:
             sink_task.cancel()
-            self._abandon_if_cancellation_is_suppressed(sink_task)
+            await self._wait_for_sink_cleanup(sink_task)
             raise
 
-    @staticmethod
-    def _abandon_if_cancellation_is_suppressed(task: asyncio.Task[None]) -> None:
-        """Keep a hostile sink from participating in runner shutdown.
-
-        CPython's runner waits for every registered task after cancelling it. A
-        sink that deliberately suppresses cancellation would therefore hold the
-        entire process open. Removing only that already-cancelled untrusted task
-        gives telemetry a hard abandonment boundary while normal sinks retain
-        their caller's event loop and resources.
-        """
-        if task.done():
+    async def _wait_for_sink_cleanup(self, task: asyncio.Task[None]) -> None:
+        done, _ = await asyncio.wait({task}, timeout=self._close_timeout_seconds)
+        if task not in done:
+            self.last_sink_failure = "telemetry_sink_contract_violation"
             return
-        scheduled_tasks = getattr(asyncio.tasks, "_scheduled_tasks", None)
-        if scheduled_tasks is not None:
-            scheduled_tasks.discard(task)
-        task._log_destroy_pending = False  # type: ignore[attr-defined]
+        with contextlib.suppress(asyncio.CancelledError):
+            task.result()

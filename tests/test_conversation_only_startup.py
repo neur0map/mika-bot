@@ -9,7 +9,6 @@ import pytest
 
 import mika.bot.client as client_module
 from mika.bot.client import BotApp
-from mika.conversation.relationships.telemetry import RelationshipTelemetry
 
 
 async def test_setup_hook_never_registers_application_commands(
@@ -75,20 +74,20 @@ async def test_bot_drains_jobs_then_telemetry_before_provider_shutdown(
     assert order == ["jobs", "telemetry", "provider"]
 
 
-async def test_bot_close_does_not_hang_on_wedged_telemetry_sink() -> None:
-    async def never_returns(record: object) -> None:
-        del record
-        await asyncio.Event().wait()
-
+async def test_bot_close_bounds_production_sink_and_awaits_its_cleanup() -> None:
+    cleanup_completed = asyncio.Event()
     bot = BotApp()
     bot.llm.shutdown = AsyncMock()
-    telemetry = RelationshipTelemetry(
-        sink=never_returns,
-        sink_timeout_seconds=0.01,
-        close_timeout_seconds=0.05,
-    )
-    bot.relationship_service.telemetry = telemetry
-    telemetry.emit(
+
+    async def slow_write(record: object) -> None:
+        del record
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleanup_completed.set()
+
+    bot.relationship_memory.record_operation_write = AsyncMock(side_effect=slow_write)
+    bot.relationship_service.telemetry.emit(
         "retrieval",
         "ok",
         correlation_id="wedged",
@@ -102,9 +101,10 @@ async def test_bot_close_does_not_hang_on_wedged_telemetry_sink() -> None:
         policy_version_id=None,
     )
 
-    await asyncio.wait_for(bot.close(), timeout=0.5)
+    await asyncio.wait_for(bot.close(), timeout=4.5)
 
     bot.llm.shutdown.assert_awaited_once()
+    assert cleanup_completed.is_set()
 
 
 def test_bot_composes_relationship_observation_job() -> None:
