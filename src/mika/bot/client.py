@@ -39,14 +39,20 @@ from mika.conversation.relationships.extraction import (
 )
 from mika.conversation.relationships.relation import classify_relation
 from mika.conversation.relationships.service import ObservationInput, RelationshipMemoryService
+from mika.conversation.relationships.telemetry import (
+    RelationshipOperationRecord,
+    RelationshipTelemetry,
+)
 from mika.conversation.tools import ToolPlanner
 from mika.core.config import get_settings
 from mika.core.logging import configure_logging, get_logger
+from mika.persistence.conversations.archive_reader import ArchiveReader
 from mika.persistence.conversations.managed_relationship_memory import ManagedRelationshipMemory
 from mika.persistence.conversations.managed_social_memory import ManagedSocialMemory
 from mika.persistence.conversations.managed_traces import ManagedTurnTraceRepository
 from mika.persistence.conversations.relationship_records import (
     RelationshipMemoryPolicyVersionRecord,
+    RelationshipOperationWrite,
 )
 from mika.persistence.engine import init_db
 from mika.web.app import create_app
@@ -127,6 +133,30 @@ class _ServiceRetriever:
         return await self._service.recall(envelope)
 
 
+class _OperationSink:
+    def __init__(self, repository: ManagedRelationshipMemory) -> None:
+        self._repository = repository
+
+    async def __call__(self, record: RelationshipOperationRecord) -> None:
+        await self._repository.record_operation_write(
+            RelationshipOperationWrite(
+                record.operation,
+                record.outcome,
+                record.correlation_hash,
+                record.duration_ms,
+                record.candidate_count,
+                record.selected_count,
+                record.rejected_count,
+                record.estimated_tokens,
+                record.fallback_reason,
+                record.profile_changed,
+                record.policy_version_id,
+                record.phase_durations_ms,
+                record.created_at,
+            )
+        )
+
+
 def _relationship_policy() -> RelationshipMemoryPolicyVersionRecord:
     memory = get_settings().memory
     return RelationshipMemoryPolicyVersionRecord(
@@ -137,7 +167,9 @@ def _relationship_policy() -> RelationshipMemoryPolicyVersionRecord:
         local_relation_model_enabled=False,
         visibility_rules={
             "guild": True,
-            "direct_message": False,
+            "direct_message": memory.relationship_direct_message_enabled,
+            "channel": True,
+            "global_explicit": True,
             "shadow_mode": memory.relationship_shadow_mode,
         },
         change_reason="runtime_settings",
@@ -163,6 +195,9 @@ class BotApp(commands.Bot):
         memory = LocalMemory()
         self.social_memory = ManagedSocialMemory()
         self.relationship_memory = ManagedRelationshipMemory()
+        relationship_telemetry = RelationshipTelemetry(
+            sink=_OperationSink(self.relationship_memory)
+        )
         self.llm = LLMClient(memory)
         if settings.memory.relationship_semantic_scoring_enabled:
             logger.warning("relationship semantic scoring is unavailable; using lexical ranking")
@@ -183,7 +218,14 @@ class BotApp(commands.Bot):
             classifier=_DeterministicClassifier(),
             retriever=relationship_retriever,
             consolidator=RelationshipConsolidator(),
+            pending_source=(
+                ArchiveReader(settings.shared_archive_path)
+                if settings.shared_archive_path is not None
+                and settings.shared_archive_path.is_file()
+                else None
+            ),
             batch_size=settings.memory.relationship_batch_size,
+            telemetry=relationship_telemetry,
         )
         self.relationship_job = RelationshipObservationJob(
             self.relationship_service,
@@ -193,6 +235,7 @@ class BotApp(commands.Bot):
                 settings.memory.relationship_consolidation_interval_seconds
             ),
             telemetry=self.relationship_service.telemetry,
+            spool_path=settings.data_dir / "relationship-observations.sqlite3",
         )
         actions = ActionPlanner()
         self.conversation = ConversationEngine(
@@ -258,6 +301,7 @@ class BotApp(commands.Bot):
                 await self._web_task
         with contextlib.suppress(Exception):
             await self.llm.shutdown()
+        await self.relationship_service.telemetry.flush()
         await super().close()
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Sequence
 from datetime import datetime
 
@@ -42,6 +43,7 @@ from mika.persistence.conversations.relationship_models import (
     StoredRecallFeedback,
     StoredRecallFeedbackClaim,
     StoredScopedProfileHead,
+    StoredRelationshipOperation,
 )
 from mika.persistence.conversations.relationship_publication import (
     publish_consolidation as publish_consolidation_transaction,
@@ -59,6 +61,7 @@ from mika.persistence.conversations.relationship_records import (
     RecallFeedbackWrite,
     RelationshipMemoryPolicyVersionRecord,
     RelationshipMemoryStatus,
+    RelationshipOperationWrite,
 )
 from mika.persistence.conversations.relationship_transitions import (
     activate_stored_claim,
@@ -487,6 +490,15 @@ class RelationshipMemoryRepository:
         archive = await self._session.scalar(
             select(StoredArchiveCursor).order_by(StoredArchiveCursor.updated_at.desc()).limit(1)
         )
+        health_rows = list(
+            (
+                await self._session.scalars(
+                    select(StoredRelationshipOperation)
+                    .order_by(StoredRelationshipOperation.created_at.desc())
+                    .limit(1000)
+                )
+            ).all()
+        )
         return RelationshipMemoryStatus(
             claim_count,
             candidate_count,
@@ -498,8 +510,29 @@ class RelationshipMemoryRepository:
             None if archive is None else archive.source_name,
             None if archive is None else archive.discord_message_id,
             None if archive is None else archive.updated_at,
-            {"recall": {"recorded": recall_count}},
+            _operation_health(health_rows),
         )
+
+    async def record_operation(self, record: RelationshipOperationWrite) -> None:
+        """Persist a content-free runtime operation for health aggregation."""
+        self._session.add(
+            StoredRelationshipOperation(
+                operation=record.operation,
+                outcome=record.outcome,
+                correlation_hash=record.correlation_hash,
+                duration_ms=record.duration_ms,
+                candidate_count=record.candidate_count,
+                selected_count=record.selected_count,
+                rejected_count=record.rejected_count,
+                estimated_tokens=record.estimated_tokens,
+                fallback_reason=record.fallback_reason,
+                profile_changed=record.profile_changed,
+                policy_version_id=record.policy_version_id,
+                phase_durations_json=canonical_json(record.phase_durations_ms),
+                created_at=record.created_at,
+            )
+        )
+        await self._commit()
 
     async def advance_cursor(self, cursor: ArchiveCursor) -> None:
         """Advance one archive cursor without permitting regression."""
@@ -782,3 +815,23 @@ def _consolidation_key(subject_user_id: str) -> str:
 
 def _scope_key(guild_id: str | None, channel_id: str | None) -> tuple[str, str]:
     return (guild_id or "", channel_id or "")
+
+
+def _operation_health(
+    rows: Sequence[StoredRelationshipOperation],
+) -> dict[str, dict[str, int | float]]:
+    grouped: dict[str, list[StoredRelationshipOperation]] = {}
+    for row in rows:
+        grouped.setdefault(row.operation, []).append(row)
+    result: dict[str, dict[str, int | float]] = {}
+    for operation, records in grouped.items():
+        durations = sorted(item.duration_ms for item in records)
+        percentile = durations[max(0, math.ceil(len(durations) * 0.95) - 1)]
+        result[operation] = {
+            "total": len(records),
+            "failed": sum(item.outcome == "failed" for item in records),
+            "fallback": sum(bool(item.fallback_reason) for item in records),
+            "retry": sum(item.outcome == "retry" for item in records),
+            "p95_ms": round(percentile, 3),
+        }
+    return result

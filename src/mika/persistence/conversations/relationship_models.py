@@ -237,6 +237,27 @@ class StoredRecallEvent(Base):
     created_at: Mapped[datetime] = mapped_column(_UTCDateTime())
 
 
+class StoredRelationshipOperation(Base):
+    """Content-free durable health record for one runtime operation."""
+
+    __tablename__ = "relationship_operation_health"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    operation: Mapped[str] = mapped_column(String(32), index=True)
+    outcome: Mapped[str] = mapped_column(String(32), index=True)
+    correlation_hash: Mapped[str] = mapped_column(String(80))
+    duration_ms: Mapped[float] = mapped_column(Float)
+    candidate_count: Mapped[int] = mapped_column(Integer)
+    selected_count: Mapped[int] = mapped_column(Integer)
+    rejected_count: Mapped[int] = mapped_column(Integer)
+    estimated_tokens: Mapped[int] = mapped_column(Integer)
+    fallback_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    profile_changed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    policy_version_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    phase_durations_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(_UTCDateTime(), index=True)
+
+
 class StoredRecallFeedback(Base):
     """One distinct ranking outcome attached to a recall event."""
 

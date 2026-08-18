@@ -48,7 +48,9 @@ Run the deterministic held-out benchmark before enabling or deploying relationsh
 uv run python tools/run_relationship_memory_benchmark.py --mode all
 ```
 
-The command always compares local hybrid recall with the lexical baseline. It requires zero
-cross-scope leakage, at least 95% correction adoption, at least 98% correct-person attribution,
-and measured wall-clock local p95 retrieval below 100 ms. Content-free aggregate JSON and per-case JSONL are written
-under `var/benchmarks/`. The Honcho mode is included only when Honcho is configured.
+The command runs the production lexical composition under both the lexical and local-hybrid labels.
+Local hybrid remains informational until Mika has a configured production embedding scorer. The
+lexical rollout gate requires zero cross-scope leakage, at least 95% correction adoption, at least
+98% correct-person attribution, and measured wall-clock local p95 retrieval below 100 ms.
+Content-free aggregate JSON and per-case JSONL are written under `var/benchmarks/`. The Honcho mode
+is included only when Honcho is configured and remains informational.

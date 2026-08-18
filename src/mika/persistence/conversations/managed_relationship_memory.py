@@ -16,6 +16,7 @@ from mika.persistence.conversations.relationship_records import (
     ProfileVersionRecord,
     RecallEventWrite,
     RelationshipMemoryPolicyVersionRecord,
+    RelationshipOperationWrite,
 )
 from mika.persistence.engine import session
 
@@ -38,6 +39,11 @@ class ManagedRelationshipMemory:
     async def active_policy_version(self) -> RelationshipMemoryPolicyVersionRecord | None:
         async with session() as active:
             return await RelationshipMemoryRepository(active).active_policy_version()
+
+    async def record_operation_write(self, record: RelationshipOperationWrite) -> None:
+        """Persist one primitive content-free health record."""
+        async with session() as active:
+            await RelationshipMemoryRepository(active).record_operation(record)
 
     async def last_consolidated_at(self, subject_user_id: str) -> datetime | None:
         async with session() as active:

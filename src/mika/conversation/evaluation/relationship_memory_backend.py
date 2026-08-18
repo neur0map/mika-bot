@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -28,8 +27,6 @@ from mika.persistence.conversations.relationship_records import (
     EvidenceWrite,
     RelationshipMemoryPolicyVersionRecord,
 )
-
-_TOKEN = re.compile(r"[a-z0-9']{3,}", re.IGNORECASE)
 
 
 class _EmptySocialMemory:
@@ -61,12 +58,6 @@ class _DeterministicExtractor:
 class _Classifier:
     def classify(self, observation: ObservationInput) -> RelationDecision:
         return classify_relation(observation.text)
-
-
-class _LocalSemanticScorer:
-    def score(self, query: str, documents: Sequence[str]) -> tuple[float, ...]:
-        query_terms = _terms(query)
-        return tuple(_jaccard(query_terms, _terms(document)) for document in documents)
 
 
 class _MutableClock:
@@ -115,12 +106,11 @@ class LocalBenchmarkBackend:
         session = AsyncSession(engine, expire_on_commit=False)
         repository = RelationshipMemoryRepository(session)
         await repository.write_policy_version(_policy(mode))
-        semantic = None if mode == "lexical" else _LocalSemanticScorer()
         retriever = AffinityRetriever(
             _EmptySocialMemory(),
             match_limit=0,
             relationship_source=repository,
-            semantic_scorer=semantic,
+            semantic_scorer=None,
         )
         clock = _MutableClock()
         service = RelationshipMemoryService(
@@ -224,7 +214,7 @@ def _policy(mode: str) -> RelationshipMemoryPolicyVersionRecord:
     return RelationshipMemoryPolicyVersionRecord(
         policy_version_id=f"benchmark-policy-{mode}",
         relationship_learning_enabled=True,
-        semantic_retrieval_enabled=mode != "lexical",
+        semantic_retrieval_enabled=False,
         provider_extraction_enabled=False,
         local_relation_model_enabled=False,
         visibility_rules={
@@ -250,12 +240,3 @@ def _envelope(observation: ObservationInput) -> ConversationEnvelope:
         False,
         observation.created_at,
     )
-
-
-def _terms(text: str) -> set[str]:
-    return {match.group(0).casefold() for match in _TOKEN.finditer(text)}
-
-
-def _jaccard(left: set[str], right: set[str]) -> float:
-    union = left | right
-    return len(left & right) / len(union) if union else 0.0

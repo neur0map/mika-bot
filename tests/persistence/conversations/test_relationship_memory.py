@@ -55,8 +55,61 @@ from mika.persistence.conversations.relationship_records import (
     ProfileClaimLinkRecord,
     RecallEventWrite,
     RecallFeedbackWrite,
+    RelationshipOperationWrite,
 )
 from mika.persistence.conversations.social_models import UserFact
+
+
+async def test_status_aggregates_persisted_operation_health(tmp_path: Path) -> None:
+    repository, engine = await _repository(tmp_path / "health.db")
+    try:
+        await repository.record_operation(
+            RelationshipOperationWrite(
+                "retrieval",
+                "fallback",
+                "sha256:safe",
+                12.5,
+                3,
+                1,
+                2,
+                8,
+                "semantic_unavailable",
+                None,
+                "policy-1",
+                {"retrieval": 12.5},
+                NOW,
+            )
+        )
+        await repository.record_operation(
+            RelationshipOperationWrite(
+                "retrieval",
+                "ok",
+                "sha256:safe-2",
+                20.0,
+                2,
+                1,
+                1,
+                6,
+                None,
+                None,
+                "policy-1",
+                {"retrieval": 20.0},
+                NOW,
+            )
+        )
+
+        health = (await repository.status()).operation_health
+
+        assert health["retrieval"] == {
+            "total": 2,
+            "failed": 0,
+            "fallback": 1,
+            "retry": 0,
+            "p95_ms": 20.0,
+        }
+    finally:
+        await repository.close()
+        await engine.dispose()
 
 
 async def test_duplicate_source_does_not_inflate_observation_count(tmp_path: Path) -> None:

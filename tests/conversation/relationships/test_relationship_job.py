@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 
 from mika.ai.learning.reflection.relationship_job import RelationshipObservationJob
 from mika.conversation.contracts import ConversationEnvelope
@@ -39,6 +40,13 @@ class Service:
         self.last_consolidation = datetime.now(UTC)
         self.consolidated_event.set()
         return object()
+
+
+class RecoveredService(Service):
+    async def observe_turn(self, observation: ObservationInput) -> ObservationResult:
+        self.calls.append(observation.message_id)
+        self.processed.set()
+        return ObservationResult("observed", "policy-1")
 
 
 def envelope(message_id: str) -> ConversationEnvelope:
@@ -104,3 +112,58 @@ async def test_disabled_job_rejects_observations_without_calling_service() -> No
 
     assert job.submit(envelope("disabled")) is False
     assert service.calls == []
+
+
+async def test_shutdown_drains_accepted_observations(tmp_path: Path) -> None:
+    service = Service()
+    ready = asyncio.Event()
+    ready.set()
+    job = RelationshipObservationJob(
+        service, max_queue_size=2, spool_path=tmp_path / "observations.sqlite3"
+    )
+    job.start(ready.wait)
+    assert job.submit(envelope("one"))
+    assert job.submit(envelope("two"))
+
+    await job.close()
+
+    assert service.calls == ["one", "two"]
+
+
+async def test_failed_observation_is_recovered_after_restart(tmp_path: Path) -> None:
+    spool = tmp_path / "observations.sqlite3"
+    failing = Service()
+    first = RelationshipObservationJob(failing, max_queue_size=2, retry_limit=0, spool_path=spool)
+    assert first.submit(envelope("fails"))
+    ready = asyncio.Event()
+    ready.set()
+    first.start(ready.wait)
+    await asyncio.wait_for(failing.processed.wait(), timeout=1)
+    await first.close()
+
+    recovered = RecoveredService()
+    second = RelationshipObservationJob(recovered, max_queue_size=2, spool_path=spool)
+    second.start(ready.wait)
+    await asyncio.wait_for(recovered.processed.wait(), timeout=1)
+    await second.close()
+
+    assert recovered.calls == ["fails"]
+
+
+async def test_exhausted_recovery_is_visible_as_dead_letter(tmp_path: Path) -> None:
+    service = Service()
+    ready = asyncio.Event()
+    ready.set()
+    job = RelationshipObservationJob(
+        service,
+        max_queue_size=1,
+        retry_limit=0,
+        recovery_attempt_limit=1,
+        spool_path=tmp_path / "observations.sqlite3",
+    )
+    assert job.submit(envelope("fails"))
+    job.start(ready.wait)
+
+    await job.close()
+
+    assert any(record.outcome == "dead_letter" for record in job.telemetry.records)

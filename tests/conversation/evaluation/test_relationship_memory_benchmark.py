@@ -198,6 +198,24 @@ async def test_real_local_store_passes_rollout_gates(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_local_hybrid_uses_the_same_lexical_runtime_until_semantics_exist(
+    tmp_path: Path,
+) -> None:
+    cases = load_relationship_cases(FIXTURE)
+    lexical = await run_local_relationship_benchmark(
+        cases, BenchmarkMode.LEXICAL, database_path=tmp_path / "lexical.db"
+    )
+    hybrid = await run_local_relationship_benchmark(
+        cases, BenchmarkMode.LOCAL_HYBRID, database_path=tmp_path / "hybrid.db"
+    )
+
+    assert [item.selected_ids for item in hybrid.results] == [
+        item.selected_ids for item in lexical.results
+    ]
+    assert hybrid.metrics.rollout_eligible is False
+
+
+@pytest.mark.asyncio
 async def test_configured_honcho_mode_calls_external_recall_without_artifact_content(
     tmp_path: Path,
 ) -> None:

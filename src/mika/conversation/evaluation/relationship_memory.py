@@ -359,7 +359,7 @@ def _aggregate(
     relation_accuracy = _rate(results, "relation_correct")
     irrelevant = _rate(results, "irrelevant_rejected")
     latency = _percentile([item.latency_ms for item in results], 0.95)
-    rollout_eligible = mode is not BenchmarkMode.LOCAL_PLUS_HONCHO
+    rollout_eligible = mode is BenchmarkMode.LEXICAL
     leakage = sum(int(item.metrics["leakage_count"]) for item in results)
     no_regression = (
         recall_quality >= _RECALL_GATE

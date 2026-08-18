@@ -203,4 +203,23 @@ class RelationshipMemoryStatus:
     archive_source_name: str | None
     archive_message_id: str | None
     archive_updated_at: datetime | None
-    operation_health: Mapping[str, Mapping[str, int]]
+    operation_health: Mapping[str, Mapping[str, int | float]]
+
+
+@dataclass(frozen=True, slots=True)
+class RelationshipOperationWrite:
+    """Primitive content-free runtime operation at the persistence boundary."""
+
+    operation: str
+    outcome: str
+    correlation_hash: str
+    duration_ms: float
+    candidate_count: int
+    selected_count: int
+    rejected_count: int
+    estimated_tokens: int
+    fallback_reason: str | None
+    profile_changed: bool | None
+    policy_version_id: str | None
+    phase_durations_ms: Mapping[str, float]
+    created_at: datetime

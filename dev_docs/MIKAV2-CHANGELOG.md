@@ -9,10 +9,12 @@
 - Added content-free JSONL case artifacts and aggregate gates for recall regression, leakage,
   correction adoption, attribution, relation classification, irrelevant rejection, prompt cost,
   and retrieval latency.
-- In the verified seven-case run, lexical and local-hybrid recall both reached 100% recall,
+- In the verified seven-case run, lexical and the parity-only local-hybrid label both reached 100% recall,
   correction adoption, attribution, relation accuracy, and irrelevant rejection with zero scope
-  leaks. Lexical wall-clock p95 was 35.70 ms and local-hybrid p95 was 48.58 ms; both passed the
-  100 ms gate. Unattributed external-memory results remain informational.
+  leaks. Lexical wall-clock p95 was 35.70 ms. Local hybrid is not rollout-eligible until a genuine
+  production embedding scorer is wired; unattributed external-memory results remain informational.
+- Added a restart-safe local observation spool, bounded shutdown drain and retry/dead-letter state,
+  configured DM visibility, and durable content-free operation health with per-phase p95 timings.
 
 ## 2026-08-17 — Natural expression skill
 

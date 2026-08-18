@@ -86,6 +86,7 @@ class MemorySettings(BaseSettings):
     relationship_learning_enabled: bool = False
     relationship_provider_extraction_enabled: bool = False
     relationship_semantic_scoring_enabled: bool = False
+    relationship_direct_message_enabled: bool = True
     relationship_shadow_mode: bool = True
     relationship_batch_size: int = Field(default=25, ge=1, le=1000)
     relationship_consolidation_interval_seconds: float = Field(default=604_800.0, gt=0)

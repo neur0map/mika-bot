@@ -16,6 +16,7 @@ from mika.persistence.conversations.relationship_models import (
     StoredRecallEvent,
     StoredRecallFeedback,
     StoredRecallFeedbackClaim,
+    StoredRelationshipOperation,
 )
 from mika.persistence.conversations.social_models import ReactionFeedback, UserFact
 from mika.persistence.models.guild_config import GuildConfig
@@ -37,6 +38,7 @@ __all__ = [
     "StoredRecallEvent",
     "StoredRecallFeedback",
     "StoredRecallFeedbackClaim",
+    "StoredRelationshipOperation",
     "StoredStageTrace",
     "StoredTurnTrace",
     "UserFact",
