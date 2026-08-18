@@ -42,8 +42,8 @@ from mika.persistence.conversations.relationship_models import (
     StoredRecallEvent,
     StoredRecallFeedback,
     StoredRecallFeedbackClaim,
-    StoredScopedProfileHead,
     StoredRelationshipOperation,
+    StoredScopedProfileHead,
 )
 from mika.persistence.conversations.relationship_publication import (
     publish_consolidation as publish_consolidation_transaction,

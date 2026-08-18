@@ -33,7 +33,14 @@ class RelationshipObservationService(Protocol):
         channel_id: str | None,
     ) -> object: ...
 
-    async def last_consolidated_at(self, subject_user_id: str) -> datetime | None: ...
+    async def last_consolidated_at(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> datetime | None: ...
 
     async def run_pending_observations(self, *, limit: int | None = None) -> object: ...
 
@@ -214,7 +221,12 @@ class RelationshipObservationJob:
             self._queued_ids.add(observation.message_id)
 
     async def _consolidate_if_due(self, observation: ObservationInput) -> None:
-        previous = await self._service.last_consolidated_at(observation.subject_user_id)
+        previous = await self._service.last_consolidated_at(
+            observation.subject_user_id,
+            visibility_kind=observation.visibility_kind,
+            guild_id=observation.guild_id,
+            channel_id=observation.channel_id,
+        )
         now = datetime.now(UTC)
         if previous is not None and (now - previous).total_seconds() < (
             self._consolidation_interval_seconds

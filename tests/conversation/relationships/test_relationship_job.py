@@ -36,7 +36,15 @@ class Service:
             raise RuntimeError("provider unavailable")
         return ObservationResult("observed", "policy-1")
 
-    async def last_consolidated_at(self, subject_user_id: str) -> datetime | None:
+    async def last_consolidated_at(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> datetime | None:
+        del subject_user_id, visibility_kind, guild_id, channel_id
         return self.last_consolidation
 
     async def consolidate_user(self, subject_user_id: str, **scope: str | None) -> object:
@@ -70,6 +78,31 @@ class ArchiveService(RecoveredService):
         del limit
         self.archive_batches += 1
         self.archive_processed.set()
+        return object()
+
+
+class ScopedCadenceService(Service):
+    def __init__(self) -> None:
+        super().__init__()
+        self.scope_cadence: dict[tuple[str, str | None, str | None], datetime] = {}
+        self.cadence_queries: list[tuple[str, str, str | None, str | None]] = []
+        self.consolidated_scopes: list[tuple[str, str | None, str | None]] = []
+
+    async def last_consolidated_at(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> datetime | None:
+        self.cadence_queries.append((subject_user_id, visibility_kind, guild_id, channel_id))
+        return self.scope_cadence.get((visibility_kind, guild_id, channel_id))
+
+    async def consolidate_user(self, subject_user_id: str, **scope: str | None) -> object:
+        key = (scope["visibility_kind"], scope["guild_id"], scope["channel_id"])
+        self.consolidated_scopes.append(key)
+        self.scope_cadence[key] = datetime.now(UTC)
         return object()
 
 
@@ -128,6 +161,39 @@ async def test_consolidation_due_state_comes_from_durable_service_timestamp() ->
 
     await job.close()
     assert service.consolidated == ["user-1"]
+
+
+async def test_consolidation_cadence_isolated_by_exact_visibility_scope() -> None:
+    service = ScopedCadenceService()
+    recent = datetime.now(UTC)
+    service.scope_cadence[("guild", "guild-a", "channel-a")] = recent
+    job = RelationshipObservationJob(service, max_queue_size=1)
+
+    guild_a = ObservationInput.from_envelope(
+        ConversationEnvelope("a", "channel-a", "guild-a", "user-1", "Ada", "one", False, recent)
+    )
+    guild_b = ObservationInput.from_envelope(
+        ConversationEnvelope("b", "channel-b", "guild-b", "user-1", "Ada", "two", False, recent)
+    )
+    direct_message = ObservationInput.from_envelope(
+        ConversationEnvelope("dm", "dm-1", None, "user-1", "Ada", "three", True, recent)
+    )
+
+    await job._consolidate_if_due(guild_a)
+    await job._consolidate_if_due(guild_b)
+    await job._consolidate_if_due(direct_message)
+    await job._consolidate_if_due(guild_b)
+
+    assert service.cadence_queries == [
+        ("user-1", "guild", "guild-a", "channel-a"),
+        ("user-1", "guild", "guild-b", "channel-b"),
+        ("user-1", "direct_message", None, "dm-1"),
+        ("user-1", "guild", "guild-b", "channel-b"),
+    ]
+    assert service.consolidated_scopes == [
+        ("guild", "guild-b", "channel-b"),
+        ("direct_message", None, "dm-1"),
+    ]
 
 
 async def test_disabled_job_rejects_observations_without_calling_service() -> None:
