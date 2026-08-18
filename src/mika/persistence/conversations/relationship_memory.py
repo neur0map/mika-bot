@@ -257,27 +257,35 @@ class RelationshipMemoryRepository:
         """Publish profile and lifecycle changes in one transaction."""
         await publish_consolidation_transaction(self._session, record, transitions)
 
-    async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None:
-        """Return the active immutable profile for one user."""
+    async def active_profiles_for_subject(self, subject_user_id: str) -> list[ProfileVersionRecord]:
+        """Enumerate every active scoped profile head for one subject."""
         scoped = list(
             (
                 await self._session.scalars(
                     select(StoredScopedProfileHead)
                     .where(StoredScopedProfileHead.subject_user_id == subject_user_id)
-                    .limit(2)
+                    .order_by(
+                        StoredScopedProfileHead.visibility_kind,
+                        StoredScopedProfileHead.guild_key,
+                        StoredScopedProfileHead.channel_key,
+                    )
                 )
             ).all()
         )
-        if len(scoped) == 1:
-            scoped_head = scoped[0]
-            return await self.active_profile_for_scope(
+        profiles: list[ProfileVersionRecord] = []
+        for scoped_head in scoped:
+            profile = await self.active_profile_for_scope(
                 subject_user_id,
                 visibility_kind=scoped_head.visibility_kind,
                 guild_id=scoped_head.guild_key or None,
                 channel_id=scoped_head.channel_key or None,
             )
-        if len(scoped) > 1:
-            return None
+            if profile is not None:
+                profiles.append(profile)
+        return profiles
+
+    async def _legacy_active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None:
+        """Read only the pre-scoped legacy head during compatibility migrations."""
         statement = (
             select(StoredProfileVersion)
             .join(

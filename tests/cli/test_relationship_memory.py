@@ -345,12 +345,45 @@ async def test_consolidation_only_uses_the_requested_exact_scope(tmp_path: Path)
         await service.consolidate_user(
             "user-1", visibility_kind="guild", guild_id="g-1", channel_id="c-1"
         )
-        profile = await repository.active_profile("user-1")
+        profiles = await repository.active_profiles_for_subject("user-1")
 
-        assert profile is not None
+        assert len(profiles) == 1
+        profile = profiles[0]
         assert "private-alpha" in profile.overview_text
         assert "private-beta" not in profile.overview_text
         assert {link.claim_id for link in profile.claim_links} == {"guild-one"}
+    finally:
+        await repository.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_inspection_enumerates_every_scoped_profile_head(tmp_path: Path) -> None:
+    service, repository, engine = await service_for(tmp_path / "memory.sqlite3", Extractor())
+    try:
+        for suffix, guild_id, channel_id in (("one", "g-1", "c-1"), ("two", "g-2", "c-2")):
+            await repository.add_evidence(
+                claim_write(
+                    suffix,
+                    key=f"project:{suffix}",
+                    value=suffix,
+                    evidence_class="explicit",
+                    guild_id=guild_id,
+                    channel_id=channel_id,
+                ),
+                evidence_write(suffix, guild_id=guild_id, channel_id=channel_id),
+            )
+            await repository.activate_claim(suffix, confirmed_at=NOW)
+            await service.consolidate_user(
+                "user-1", visibility_kind="guild", guild_id=guild_id, channel_id=channel_id
+            )
+
+        profiles = await repository.active_profiles_for_subject("user-1")
+
+        assert {(item.visibility_kind, item.guild_id, item.channel_id) for item in profiles} == {
+            ("guild", "g-1", "c-1"),
+            ("guild", "g-2", "c-2"),
+        }
     finally:
         await repository.close()
         await engine.dispose()

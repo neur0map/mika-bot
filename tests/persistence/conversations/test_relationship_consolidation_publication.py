@@ -118,7 +118,9 @@ async def test_profile_publication_commits_lifecycle_visibility_together(
         visible = await memory.claims_for_user(
             "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
         )
-        active = await memory.active_profile("user-1")
+        active = await memory.active_profile_for_scope(
+            "user-1", visibility_kind="legacy_unscoped", guild_id=None, channel_id=None
+        )
         assert all(item is not None for item in stored_claims)
         assert {item.claim_id: item.state for item in stored_claims if item is not None} == {
             "promoted": "active",
@@ -157,7 +159,7 @@ async def test_failed_profile_publication_rolls_back_lifecycle_transitions(
 
         candidate = await memory.claim("candidate")
         assert candidate is not None and candidate.state == "candidate"
-        assert await memory.active_profile("user-1") == original
+        assert await memory._legacy_active_profile("user-1") == original
     finally:
         await memory.close()
         await engine.dispose()
@@ -177,7 +179,7 @@ async def test_profile_claim_links_round_trip_as_primitive_metadata(tmp_path: Pa
 
         await memory.write_profile_version(linked_profile)
 
-        assert await memory.active_profile("user-1") == linked_profile
+        assert await memory._legacy_active_profile("user-1") == linked_profile
     finally:
         await memory.close()
         await engine.dispose()
@@ -204,7 +206,9 @@ async def test_same_policy_content_reversion_reuses_profile_and_commits_transiti
             (ClaimTransitionRecord("promoted-on-revert", "candidate", "active", NOW),),
         )
 
-        active = await memory.active_profile("user-1")
+        active = await memory.active_profile_for_scope(
+            "user-1", visibility_kind="legacy_unscoped", guild_id=None, channel_id=None
+        )
         promoted = await memory.claim("promoted-on-revert")
         assert active == first
         assert promoted is not None and promoted.state == "active"
@@ -222,7 +226,7 @@ async def test_new_nonempty_profile_requires_structured_claim_links(tmp_path: Pa
         with pytest.raises(ValueError, match="nonempty profile requires claim links"):
             await memory.write_profile_version(profile("unlinked", "Interests: favorite: Tea"))
 
-        assert await memory.active_profile("user-1") is None
+        assert await memory._legacy_active_profile("user-1") is None
     finally:
         await memory.close()
         await engine.dispose()

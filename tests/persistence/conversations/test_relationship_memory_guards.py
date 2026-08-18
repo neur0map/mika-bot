@@ -171,7 +171,7 @@ async def test_every_derived_write_rejects_a_missing_policy_version(tmp_path: Pa
             await memory.record_recall(recall_event())
 
         assert await memory.claim("claim-1") is None
-        assert await memory.active_profile("user-1") is None
+        assert await memory._legacy_active_profile("user-1") is None
         assert await memory.cursor("weekly") is None
     finally:
         await memory.close()

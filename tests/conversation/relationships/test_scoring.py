@@ -70,14 +70,35 @@ def test_scope_rejects_other_people_and_invisible_channels_before_scoring() -> N
 
     result = HybridMemoryScorer().rank("launch", candidates, _SCOPE, now=_NOW)
 
-    assert [item.candidate_id for item in result.ranked] == ["visible"]
+    assert [item.candidate_id for item in result.ranked] == ["global-correction"]
     assert result.rejection_reasons == {
+        "visible": "near_duplicate:global-correction",
         "other-person": "subject_mismatch",
         "other-channel": "channel_scope_mismatch",
         "private": "direct_message_scope_mismatch",
         "legacy": "unresolved_legacy_scope",
-        "global-correction": "invalid_global_scope",
     }
+
+
+def test_global_scope_allows_only_direct_statements_and_corrections() -> None:
+    candidates = tuple(
+        _candidate(
+            evidence_class,
+            "launch preference",
+            visibility_kind="global_explicit",
+            guild_id=None,
+            channel_id=None,
+            evidence_class=evidence_class,
+        )
+        for evidence_class in ("explicit", "correction", "repeated_behavior", "inference")
+    )
+
+    result = HybridMemoryScorer(minimum_score=0.0).rank("launch", candidates, _SCOPE, now=_NOW)
+
+    assert [item.candidate_id for item in result.ranked] == ["correction"]
+    assert result.rejection_reasons["explicit"] == "near_duplicate:correction"
+    assert result.rejection_reasons["repeated_behavior"] == "invalid_global_scope"
+    assert result.rejection_reasons["inference"] == "invalid_global_scope"
 
 
 def test_correction_priority_outranks_confidence_recency_and_lexical_overlap() -> None:

@@ -113,7 +113,6 @@ class RelationshipRepository(Protocol):
     async def evidence_for_claims(
         self, claim_ids: Sequence[str]
     ) -> Sequence[ClaimEvidenceRecord]: ...
-    async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None: ...
     async def active_profile_for_scope(
         self,
         subject_user_id: str,

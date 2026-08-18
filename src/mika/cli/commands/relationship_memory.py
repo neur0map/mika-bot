@@ -289,7 +289,7 @@ async def _inspect_command(subject_user_id: str) -> dict[str, object]:
         repository = RelationshipMemoryRepository(active)
         claims = await repository.claims_for_subject(subject_user_id)
         evidence = await repository.evidence_for_claims([claim.claim_id for claim in claims])
-        profile = await repository.active_profile(subject_user_id)
+        profiles = await repository.active_profiles_for_subject(subject_user_id)
         sources: dict[str, list[str]] = {}
         for item in evidence:
             sources.setdefault(item.claim_id, []).append(item.source_message_id)
@@ -305,7 +305,15 @@ async def _inspect_command(subject_user_id: str) -> dict[str, object]:
                 }
                 for claim in claims
             ],
-            "active_profile_version": None if profile is None else profile.profile_version_id,
+            "active_profiles": [
+                {
+                    "visibility_kind": profile.visibility_kind,
+                    "guild_id": profile.guild_id,
+                    "channel_id": profile.channel_id,
+                    "profile_version_id": profile.profile_version_id,
+                }
+                for profile in profiles
+            ],
         }
 
 

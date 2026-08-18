@@ -138,11 +138,11 @@ async def test_profile_and_policy_versions_are_immutable_with_atomic_heads(tmp_p
 
         await repository.write_profile_version(first)
         await repository.write_profile_version(second)
-        assert (await repository.active_profile("user-1")) == second
+        assert (await repository._legacy_active_profile("user-1")) == second
 
         with pytest.raises(ValueError, match="profile version already exists"):
             await repository.write_profile_version(replace(first, overview_text="mutated overview"))
-        assert (await repository.active_profile("user-1")) == second
+        assert (await repository._legacy_active_profile("user-1")) == second
 
         with pytest.raises(ValueError, match="policy version already exists"):
             await repository.write_policy_version(_policy())
@@ -404,7 +404,7 @@ async def test_deleting_user_memory_removes_all_derived_rows_only(tmp_path: Path
         await repository.delete_user_memory("user-1")
 
         assert await repository.claim("claim-1") is None
-        assert await repository.active_profile("user-1") is None
+        assert await repository._legacy_active_profile("user-1") is None
         async with _inspection_factory(engine)() as inspection:
             assert (
                 await inspection.scalar(select(func.count(StoredRecallEvent.recall_event_id))) == 0

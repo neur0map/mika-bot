@@ -184,7 +184,7 @@ async def test_consolidation_rejects_loss_of_active_predecessor_anchor(tmp_path:
             "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
         )
 
-        active = await store.active_profile("user-1")
+        active = (await store.active_profiles_for_subject("user-1"))[0]
         assert result.rejected is True
         assert result.profile_changed is False
         assert active is not None
@@ -245,7 +245,7 @@ async def test_unchanged_profile_is_republished_under_effective_policy(tmp_path:
             "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
         )
 
-        active = await store.active_profile("user-1")
+        active = (await store.active_profiles_for_subject("user-1"))[0]
         assert result.profile_changed is True
         assert result.policy_version_id == "policy-2"
         assert active is not None and active.policy_version_id == "policy-2"
@@ -279,7 +279,7 @@ async def test_predecessor_profile_round_trips_delimiter_values_losslessly(tmp_p
             "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
         )
 
-        active = await store.active_profile("user-1")
+        active = (await store.active_profiles_for_subject("user-1"))[0]
         assert first.profile_changed is True
         assert second.profile_changed is False
         assert active is not None and "Tea; coffee" in active.overview_text
@@ -318,7 +318,7 @@ async def test_same_rendered_profile_republishes_changed_claim_membership(tmp_pa
         expanded = await service.consolidate_user(
             "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
         )
-        expanded_profile = await store.active_profile("user-1")
+        expanded_profile = (await store.active_profiles_for_subject("user-1"))[0]
 
         disputing_service = RelationshipMemoryService(
             repository=store,
@@ -333,7 +333,7 @@ async def test_same_rendered_profile_republishes_changed_claim_membership(tmp_pa
             "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
         )
 
-        active = await store.active_profile("user-1")
+        active = (await store.active_profiles_for_subject("user-1"))[0]
         original_record = await store.claim("original")
         replacement_record = await store.claim("replacement")
         assert expanded.profile_changed is True
@@ -390,7 +390,7 @@ async def test_legacy_unlinked_profile_is_republished_with_canonical_links(tmp_p
             "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
         )
 
-        active = await store.active_profile("user-1")
+        active = (await store.active_profiles_for_subject("user-1"))[0]
         assert result.profile_changed is True
         assert active is not None and active.profile_version_id != "legacy-profile"
         assert active.claim_links == (ProfileClaimLinkRecord("legacy-claim", "interests", 0),)

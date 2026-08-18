@@ -252,7 +252,10 @@ def _correction_predecessor(
     candidates = [
         item
         for item in claims
-        if item.state == "active"
+        if (
+            item.state == "active"
+            or (item.state == "candidate" and item.last_observed_at <= proposal.source_timestamp)
+        )
         and item.subject_user_id == observation.subject_user_id
         and item.kind == proposal.kind
         and " ".join(item.key.casefold().split()) == normalized_key

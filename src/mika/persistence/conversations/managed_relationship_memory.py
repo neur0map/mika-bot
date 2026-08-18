@@ -119,10 +119,6 @@ class ManagedRelationshipMemory:
         async with session() as active:
             return await RelationshipMemoryRepository(active).evidence_for_claims(claim_ids)
 
-    async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None:
-        async with session() as active:
-            return await RelationshipMemoryRepository(active).active_profile(subject_user_id)
-
     async def active_profile_for_scope(
         self,
         subject_user_id: str,
@@ -137,6 +133,12 @@ class ManagedRelationshipMemory:
                 visibility_kind=visibility_kind,
                 guild_id=guild_id,
                 channel_id=channel_id,
+            )
+
+    async def active_profiles_for_subject(self, subject_user_id: str) -> list[ProfileVersionRecord]:
+        async with session() as active:
+            return await RelationshipMemoryRepository(active).active_profiles_for_subject(
+                subject_user_id
             )
 
     async def write_profile_version(self, record: ProfileVersionRecord) -> None:

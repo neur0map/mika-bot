@@ -188,7 +188,9 @@ def _guild_scope_rejection(candidate: MemoryCandidate, scope: RetrievalScope) ->
 
 def _global_scope_rejection(candidate: MemoryCandidate, scope: RetrievalScope) -> str | None:
     del scope
-    return None if candidate.evidence_class == "explicit" else "invalid_global_scope"
+    return (
+        None if candidate.evidence_class in {"explicit", "correction"} else "invalid_global_scope"
+    )
 
 
 def _semantic_scores(

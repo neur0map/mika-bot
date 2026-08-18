@@ -322,6 +322,77 @@ async def test_archive_downgrades_global_behavior_to_physical_channel(tmp_path: 
         await engine.dispose()
 
 
+async def test_archive_global_correction_replaces_explicit_value_in_guild_and_dm_recall(
+    tmp_path: Path,
+) -> None:
+    class GlobalExtractor(Extractor):
+        async def extract(
+            self, observation: ObservationInput, relation: RelationDecision
+        ) -> tuple[EvidenceProposal, ...]:
+            return (
+                EvidenceProposal(
+                    "preference",
+                    "preference:drink",
+                    "coffee" if relation.relation == "correction" else "tea",
+                    "correction" if relation.relation == "correction" else "explicit",
+                    0.98,
+                    observation.message_id,
+                    observation.created_at,
+                    "fixture",
+                ),
+            )
+
+    service, store, engine = await service_for(tmp_path / "memory.db", GlobalExtractor())
+    first = ArchiveSourceRecord(
+        "discord",
+        "global-a",
+        "910",
+        "user-1",
+        "Ada",
+        "I prefer tea",
+        NOW,
+        "global_explicit",
+        None,
+        None,
+    )
+    correction = ArchiveSourceRecord(
+        "discord",
+        "global-b",
+        "911",
+        "user-1",
+        "Ada",
+        "Actually I prefer coffee",
+        NOW + timedelta(minutes=1),
+        "global_explicit",
+        None,
+        None,
+    )
+    try:
+        await service.observe_archive_candidate(first)
+        await service.observe_archive_candidate(correction)
+        await service.consolidate_user(
+            "user-1",
+            visibility_kind="global_explicit",
+            guild_id=None,
+            channel_id=None,
+        )
+
+        guild_recall = await service.recall(envelope("guild-recall"))
+        dm_envelope = replace(envelope("dm-recall"), guild_id="", channel_id="dm-channel")
+        dm_recall = await service.recall(dm_envelope)
+
+        assert guild_recall.text == "coffee"
+        assert dm_recall.text == "coffee"
+        claims = await store.claims_for_subject("user-1")
+        assert {(claim.value, claim.state) for claim in claims} == {
+            ("tea", "superseded"),
+            ("coffee", "active"),
+        }
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
 async def test_failed_extraction_leaves_cursor_at_last_success(tmp_path: Path) -> None:
     archive_path = tmp_path / "archive.db"
     create_archive(archive_path)

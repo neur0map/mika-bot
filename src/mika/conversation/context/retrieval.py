@@ -62,7 +62,14 @@ class RelationshipMemorySource(Protocol):
         limit: int = 100,
     ) -> Sequence[ClaimRecord]: ...
 
-    async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None: ...
+    async def active_profile_for_scope(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> ProfileVersionRecord | None: ...
 
 
 class ContextRetriever(Protocol):
