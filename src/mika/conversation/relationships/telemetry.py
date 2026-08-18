@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from inspect import iscoroutinefunction
 from typing import Literal, Protocol
 
 
@@ -60,8 +61,10 @@ class RelationshipTelemetry:
             raise ValueError("telemetry close timeout must be positive")
         if sink is not None and getattr(sink, "cancellation_cooperative", False) is not True:
             raise TypeError("telemetry sink must declare a cancellation-cooperative contract")
-        if sink is not None and not callable(getattr(sink, "write", None)):
-            raise TypeError("telemetry sink must provide an async write method")
+        if sink is not None:
+            write = getattr(sink, "write", None)
+            if not callable(write) or not iscoroutinefunction(write):
+                raise TypeError("telemetry sink must provide an async write method")
         self._records: deque[RelationshipOperationRecord] = deque(maxlen=capacity)
         self._sink = sink
         self._sink_timeout_seconds = sink_timeout_seconds

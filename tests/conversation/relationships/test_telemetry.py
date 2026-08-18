@@ -34,6 +34,17 @@ def test_telemetry_rejects_contract_marker_without_write_method() -> None:
         RelationshipTelemetry(sink=InvalidSink())
 
 
+def test_telemetry_rejects_cooperative_sink_with_sync_write() -> None:
+    class SyncSink:
+        cancellation_cooperative = True
+
+        def write(self, record: object) -> None:
+            del record
+
+    with pytest.raises(TypeError, match="async write"):
+        RelationshipTelemetry(sink=SyncSink())
+
+
 def test_telemetry_hashes_correlation_and_keeps_only_operational_fields() -> None:
     telemetry = RelationshipTelemetry()
 
