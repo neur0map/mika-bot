@@ -48,6 +48,16 @@ class RelationshipObservationSpool:
                 "UPDATE pending_observations SET expires_at = ? WHERE expires_at IS NULL",
                 (now,),
             )
+            connection.execute(
+                """UPDATE pending_observations SET payload_json = NULL
+                   WHERE dead_letter = 1 AND expires_at <= ?""",
+                (now,),
+            )
+            connection.execute(
+                """DELETE FROM pending_observations
+                   WHERE dead_letter = 0 AND expires_at <= ?""",
+                (now,),
+            )
         path.chmod(0o600)
 
     def put(self, observation: ObservationInput) -> None:
@@ -72,6 +82,11 @@ class RelationshipObservationSpool:
     ) -> tuple[ObservationInput, ...]:
         now = datetime.now(UTC).isoformat()
         with self._connect() as connection:
+            connection.execute(
+                """UPDATE pending_observations SET payload_json = NULL
+                   WHERE dead_letter = 1 AND expires_at IS NOT NULL AND expires_at <= ?""",
+                (now,),
+            )
             connection.execute(
                 """DELETE FROM pending_observations
                    WHERE dead_letter = 0 AND expires_at IS NOT NULL AND expires_at <= ?""",

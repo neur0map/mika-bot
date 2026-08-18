@@ -1,6 +1,9 @@
 """Content-free relationship operation telemetry."""
 
 import asyncio
+import subprocess
+import sys
+import textwrap
 from time import monotonic
 
 from mika.conversation.relationships.telemetry import RelationshipTelemetry
@@ -128,3 +131,82 @@ async def test_telemetry_close_bounds_a_wedged_sink_and_accounts_pending_work() 
     assert telemetry.last_sink_failure == "telemetry_flush_timeout"
     assert telemetry.dropped_sink_records >= 1
     assert telemetry.pending_sink_records == 0
+
+
+async def test_telemetry_close_abandons_sink_that_suppresses_cancellation() -> None:
+    async def ignores_cancellation(record: object) -> None:
+        del record
+        while True:
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                continue
+
+    telemetry = RelationshipTelemetry(
+        sink=ignores_cancellation,
+        sink_timeout_seconds=0.01,
+        close_timeout_seconds=0.05,
+    )
+    telemetry.emit(
+        "retrieval",
+        "ok",
+        correlation_id="wedged",
+        duration_ms=1,
+        candidate_count=0,
+        selected_count=0,
+        rejected_count=0,
+        estimated_tokens=0,
+        fallback_reason=None,
+        profile_changed=None,
+        policy_version_id="policy-1",
+    )
+
+    started = monotonic()
+    await telemetry.close()
+
+    assert monotonic() - started < 0.5
+    assert telemetry.pending_sink_records == 0
+
+
+def test_cancellation_resistant_sink_cannot_hold_interpreter_open() -> None:
+    program = textwrap.dedent(
+        """
+        import asyncio
+        import threading
+        from mika.conversation.relationships.telemetry import RelationshipTelemetry
+
+        async def ignores_cancellation(record):
+            while True:
+                try:
+                    await asyncio.sleep(3600)
+                except asyncio.CancelledError:
+                    continue
+
+        async def main():
+            telemetry = RelationshipTelemetry(
+                sink=ignores_cancellation,
+                sink_timeout_seconds=0.01,
+                close_timeout_seconds=0.05,
+            )
+            telemetry.emit(
+                "retrieval", "ok", correlation_id="wedged", duration_ms=1,
+                candidate_count=0, selected_count=0, rejected_count=0,
+                estimated_tokens=0, fallback_reason=None, profile_changed=None,
+                policy_version_id="policy-1",
+            )
+            await telemetry.close()
+            assert [thread.name for thread in threading.enumerate()] == ["MainThread"]
+
+        asyncio.run(main())
+        """
+    )
+
+    result = subprocess.run(  # noqa: S603 - fixed interpreter and test-only source
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        timeout=1,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

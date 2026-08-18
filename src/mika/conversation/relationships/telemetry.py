@@ -163,9 +163,7 @@ class RelationshipTelemetry:
                 retry_count = 3
                 for attempt in range(retry_count):
                     try:
-                        await asyncio.wait_for(
-                            self._sink(record), timeout=self._sink_timeout_seconds
-                        )
+                        await self._invoke_sink_bounded(record)
                         self.last_sink_failure = None
                         break
                     except asyncio.CancelledError:
@@ -182,3 +180,49 @@ class RelationshipTelemetry:
                     self._pending_sink_records -= 1
                     self._queue.task_done()
                     self._active_record = None
+
+    async def _invoke_sink_bounded(self, record: RelationshipOperationRecord) -> None:
+        """Run an untrusted sink with a hard application-shutdown boundary.
+
+        An arbitrary coroutine can catch ``CancelledError`` forever.  Keeping such
+        a coroutine on the application loop would make ``asyncio.run`` wait for it
+        during shutdown. Normal sinks retain the caller's event loop and resources;
+        only an already-cancelled sink that exceeds its deadline is abandoned.
+        """
+        assert self._sink is not None
+
+        async def invoke() -> None:
+            assert self._sink is not None
+            await self._sink(record)
+
+        sink_task: asyncio.Task[None] = asyncio.create_task(
+            invoke(), name="relationship-telemetry-write"
+        )
+        try:
+            done, _ = await asyncio.wait({sink_task}, timeout=self._sink_timeout_seconds)
+            if sink_task not in done:
+                sink_task.cancel()
+                self._abandon_if_cancellation_is_suppressed(sink_task)
+                raise TimeoutError("telemetry sink timed out")
+            sink_task.result()
+        except asyncio.CancelledError:
+            sink_task.cancel()
+            self._abandon_if_cancellation_is_suppressed(sink_task)
+            raise
+
+    @staticmethod
+    def _abandon_if_cancellation_is_suppressed(task: asyncio.Task[None]) -> None:
+        """Keep a hostile sink from participating in runner shutdown.
+
+        CPython's runner waits for every registered task after cancelling it. A
+        sink that deliberately suppresses cancellation would therefore hold the
+        entire process open. Removing only that already-cancelled untrusted task
+        gives telemetry a hard abandonment boundary while normal sinks retain
+        their caller's event loop and resources.
+        """
+        if task.done():
+            return
+        scheduled_tasks = getattr(asyncio.tasks, "_scheduled_tasks", None)
+        if scheduled_tasks is not None:
+            scheduled_tasks.discard(task)
+        task._log_destroy_pending = False  # type: ignore[attr-defined]

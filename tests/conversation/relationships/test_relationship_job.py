@@ -277,6 +277,34 @@ def test_legacy_spool_rows_without_expiry_are_purged_on_migration(tmp_path: Path
         assert connection.execute("SELECT COUNT(*) FROM pending_observations").fetchone()[0] == 0
 
 
+def test_legacy_dead_letter_payload_is_redacted_on_migration(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-dead-letter.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """CREATE TABLE pending_observations (
+                message_id TEXT PRIMARY KEY,
+                payload_json TEXT,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                dead_letter INTEGER NOT NULL DEFAULT 0,
+                last_failure TEXT
+            )"""
+        )
+        connection.execute(
+            """INSERT INTO pending_observations(
+                   message_id, payload_json, dead_letter, last_failure
+               ) VALUES (?, ?, 1, ?)""",
+            ("legacy", '{"content": "sensitive legacy content"}', "failed"),
+        )
+
+    RelationshipObservationSpool(path)
+
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            "SELECT payload_json, dead_letter, last_failure FROM pending_observations"
+        ).fetchone()
+    assert row == (None, 1, "failed")
+
+
 async def test_live_traffic_cannot_starve_bounded_archive_batches() -> None:
     service = ArchiveService()
     ready = asyncio.Event()
