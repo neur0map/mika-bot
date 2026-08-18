@@ -39,6 +39,15 @@ class RelationshipObservationSpool:
             for name in ("next_attempt_at", "expires_at"):
                 if name not in columns:
                     connection.execute(f"ALTER TABLE pending_observations ADD COLUMN {name} TEXT")
+            now = datetime.now(UTC).isoformat()
+            connection.execute(
+                "UPDATE pending_observations SET next_attempt_at = ? WHERE next_attempt_at IS NULL",
+                (now,),
+            )
+            connection.execute(
+                "UPDATE pending_observations SET expires_at = ? WHERE expires_at IS NULL",
+                (now,),
+            )
         path.chmod(0o600)
 
     def put(self, observation: ObservationInput) -> None:

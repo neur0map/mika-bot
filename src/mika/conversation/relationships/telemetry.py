@@ -38,19 +38,40 @@ class RelationshipTelemetry:
         *,
         capacity: int = 1000,
         sink: Callable[[RelationshipOperationRecord], Awaitable[None]] | None = None,
+        sink_timeout_seconds: float = 1.0,
+        close_timeout_seconds: float = 5.0,
     ) -> None:
         if capacity < 1:
             raise ValueError("telemetry capacity must be positive")
+        if sink_timeout_seconds <= 0:
+            raise ValueError("telemetry sink timeout must be positive")
+        if close_timeout_seconds <= 0:
+            raise ValueError("telemetry close timeout must be positive")
         self._records: deque[RelationshipOperationRecord] = deque(maxlen=capacity)
         self._sink = sink
+        self._sink_timeout_seconds = sink_timeout_seconds
+        self._close_timeout_seconds = close_timeout_seconds
         self._queue: asyncio.Queue[RelationshipOperationRecord] = asyncio.Queue(maxsize=capacity)
         self._worker: asyncio.Task[None] | None = None
         self.last_sink_failure: str | None = None
+        self._dropped_sink_records = 0
+        self._pending_sink_records = 0
+        self._active_record: RelationshipOperationRecord | None = None
 
     @property
     def records(self) -> tuple[RelationshipOperationRecord, ...]:
         """Return an immutable snapshot for health aggregation."""
         return tuple(self._records)
+
+    @property
+    def dropped_sink_records(self) -> int:
+        """Number of durable telemetry writes abandoned after bounded attempts."""
+        return self._dropped_sink_records
+
+    @property
+    def pending_sink_records(self) -> int:
+        """Number of durable writes still awaiting queue accounting."""
+        return self._pending_sink_records
 
     def emit(
         self,
@@ -92,6 +113,7 @@ class RelationshipTelemetry:
         if self._sink is not None:
             try:
                 self._queue.put_nowait(record)
+                self._pending_sink_records += 1
             except asyncio.QueueFull:
                 self.last_sink_failure = "telemetry_queue_full"
                 return
@@ -100,7 +122,10 @@ class RelationshipTelemetry:
 
     async def flush(self) -> None:
         """Await pending durable writes without exposing their payloads."""
-        await self._queue.join()
+        try:
+            await asyncio.wait_for(self._queue.join(), timeout=self._close_timeout_seconds)
+        except TimeoutError:
+            self.last_sink_failure = "telemetry_flush_timeout"
 
     async def close(self) -> None:
         """Flush writes and stop the owned sink worker."""
@@ -109,25 +134,51 @@ class RelationshipTelemetry:
         self._worker = None
         if worker is not None:
             worker.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await worker
+            done, _ = await asyncio.wait({worker}, timeout=self._close_timeout_seconds)
+            if worker in done:
+                with contextlib.suppress(asyncio.CancelledError):
+                    worker.result()
+            else:
+                self.last_sink_failure = "telemetry_close_timeout"
+                if self._active_record is not None:
+                    self._dropped_sink_records += 1
+                    self._pending_sink_records -= 1
+                    self._queue.task_done()
+                    self._active_record = None
+        while True:
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            self._dropped_sink_records += 1
+            self._pending_sink_records -= 1
+            self._queue.task_done()
 
     async def _run_sink(self) -> None:
         assert self._sink is not None
         while True:
             record = await self._queue.get()
+            self._active_record = record
             try:
                 retry_count = 3
                 for attempt in range(retry_count):
                     try:
-                        await self._sink(record)
+                        await asyncio.wait_for(
+                            self._sink(record), timeout=self._sink_timeout_seconds
+                        )
                         self.last_sink_failure = None
                         break
                     except asyncio.CancelledError:
+                        self._dropped_sink_records += 1
                         raise
                     except Exception as error:
                         self.last_sink_failure = type(error).__name__
                         if attempt < retry_count - 1:
                             await asyncio.sleep(0)
+                else:
+                    self._dropped_sink_records += 1
             finally:
-                self._queue.task_done()
+                if self._active_record is record:
+                    self._pending_sink_records -= 1
+                    self._queue.task_done()
+                    self._active_record = None

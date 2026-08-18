@@ -253,6 +253,30 @@ def test_spool_file_is_private_and_expired_payload_is_purged(tmp_path: Path) -> 
     assert count == 0
 
 
+def test_legacy_spool_rows_without_expiry_are_purged_on_migration(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-observations.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """CREATE TABLE pending_observations (
+                message_id TEXT PRIMARY KEY,
+                payload_json TEXT,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                dead_letter INTEGER NOT NULL DEFAULT 0,
+                last_failure TEXT
+            )"""
+        )
+        connection.execute(
+            "INSERT INTO pending_observations(message_id, payload_json) VALUES (?, ?)",
+            ("legacy", '{"content": "sensitive legacy content"}'),
+        )
+
+    spool = RelationshipObservationSpool(path)
+
+    assert spool.pending(1) == ()
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM pending_observations").fetchone()[0] == 0
+
+
 async def test_live_traffic_cannot_starve_bounded_archive_batches() -> None:
     service = ArchiveService()
     ready = asyncio.Event()

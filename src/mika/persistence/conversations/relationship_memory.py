@@ -834,7 +834,7 @@ def _operation_health(
             "retry": sum(item.outcome == "retry" for item in records),
             "dead_letter": sum(item.outcome == "dead_letter" for item in records),
             "unhealthy": sum(
-                item.outcome in {"failed", "retry", "dead_letter"} for item in records
+                item.outcome in {"failed", "retry", "dead_letter", "rejected"} for item in records
             ),
             "p95_ms": round(percentile, 3),
         }

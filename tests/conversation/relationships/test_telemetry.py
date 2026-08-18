@@ -1,6 +1,7 @@
 """Content-free relationship operation telemetry."""
 
 import asyncio
+from time import monotonic
 
 from mika.conversation.relationships.telemetry import RelationshipTelemetry
 
@@ -91,3 +92,39 @@ async def test_telemetry_uses_one_worker_retries_and_flushes_deterministically()
     assert attempts == 3
     assert telemetry.last_sink_failure is None
     await telemetry.close()
+
+
+async def test_telemetry_close_bounds_a_wedged_sink_and_accounts_pending_work() -> None:
+    wedged = asyncio.Event()
+
+    async def never_returns(record: object) -> None:
+        del record
+        await wedged.wait()
+
+    telemetry = RelationshipTelemetry(
+        sink=never_returns,
+        sink_timeout_seconds=0.01,
+        close_timeout_seconds=0.05,
+    )
+    for correlation in ("one", "two"):
+        telemetry.emit(
+            "retrieval",
+            "ok",
+            correlation_id=correlation,
+            duration_ms=1,
+            candidate_count=0,
+            selected_count=0,
+            rejected_count=0,
+            estimated_tokens=0,
+            fallback_reason=None,
+            profile_changed=None,
+            policy_version_id="policy-1",
+        )
+
+    started = monotonic()
+    await telemetry.close()
+
+    assert monotonic() - started < 0.5
+    assert telemetry.last_sink_failure == "telemetry_flush_timeout"
+    assert telemetry.dropped_sink_records >= 1
+    assert telemetry.pending_sink_records == 0

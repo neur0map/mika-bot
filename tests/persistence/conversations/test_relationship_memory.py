@@ -115,10 +115,12 @@ async def test_status_aggregates_persisted_operation_health(tmp_path: Path) -> N
         await engine.dispose()
 
 
-async def test_retry_and_dead_letter_are_unhealthy_with_per_phase_p95(tmp_path: Path) -> None:
+async def test_retry_dead_letter_and_rejected_are_unhealthy_with_per_phase_p95(
+    tmp_path: Path,
+) -> None:
     repository, engine = await _repository(tmp_path / "unhealthy.db")
     try:
-        for outcome, duration in (("retry", 3.0), ("dead_letter", 9.0)):
+        for outcome, duration in (("retry", 3.0), ("dead_letter", 9.0), ("rejected", 4.0)):
             await repository.record_operation(
                 RelationshipOperationWrite(
                     "observation_queue",
@@ -141,7 +143,7 @@ async def test_retry_and_dead_letter_are_unhealthy_with_per_phase_p95(tmp_path: 
 
         assert health["retry"] == 1
         assert health["dead_letter"] == 1
-        assert health["unhealthy"] == 2
+        assert health["unhealthy"] == 3
         assert health["p95_queue_ms"] == 9.0
     finally:
         await repository.close()
