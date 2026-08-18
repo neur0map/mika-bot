@@ -18,6 +18,7 @@ from tests.persistence.conversations.relationship_memory_test_support import (
 
 from mika.conversation.context.retrieval import MemoryRecall
 from mika.conversation.contracts import ConversationEnvelope
+from mika.conversation.relationships import service as service_module
 from mika.conversation.relationships.activation import ActivationPolicy
 from mika.conversation.relationships.consolidation import RelationshipConsolidator
 from mika.conversation.relationships.contracts import RelationDecision, RelationKind
@@ -35,9 +36,17 @@ from mika.persistence.conversations.relationship_models import (
     StoredProfileVersion,
     StoredRecallEvent,
 )
-from mika.persistence.conversations.relationship_records import ClaimWrite, EvidenceWrite
+from mika.persistence.conversations.relationship_records import (
+    ArchiveSourceRecord,
+    ClaimWrite,
+    EvidenceWrite,
+)
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
+
+
+def test_relationship_service_stays_below_repository_file_cap() -> None:
+    assert len(Path(service_module.__file__).read_text().splitlines()) < 500
 
 
 class Extractor:
@@ -226,6 +235,88 @@ async def test_pending_observations_are_bounded_and_cursor_idempotent(tmp_path: 
         assert cursor is not None
         assert cursor.discord_message_id == "102"
         assert (await service.run_pending_observations()).processed == 0
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_archive_observation_respects_disabled_direct_messages(tmp_path: Path) -> None:
+    store, engine = await repository(tmp_path / "memory.db")
+    await store.write_policy_version(
+        replace(policy(), visibility_rules={"direct_message": False, "guild": True})
+    )
+    extractor = Extractor()
+    service = RelationshipMemoryService(
+        repository=store,
+        extractor=extractor,
+        activation_policy=ActivationPolicy(),
+        classifier=Classifier(),
+        retriever=Retriever(store),
+        consolidator=RelationshipConsolidator(),
+    )
+    source = ArchiveSourceRecord(
+        "discord",
+        "dm-source",
+        "900",
+        "user-1",
+        "Ada",
+        "I like Hades",
+        NOW,
+        "direct_message",
+        None,
+        "dm-channel",
+    )
+    try:
+        result = await service.observe_archive_candidate(source)
+        assert result.outcome == "disabled"
+        assert extractor.calls == []
+        assert await store.claims_for_subject("user-1") == []
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_archive_downgrades_global_behavior_to_physical_channel(tmp_path: Path) -> None:
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    source = ArchiveSourceRecord(
+        "discord",
+        "behavior-source",
+        "901",
+        "user-1",
+        "Ada",
+        "I like Hades",
+        NOW,
+        "global_explicit",
+        "guild-1",
+        "channel-1",
+    )
+
+    class BehaviorExtractor(Extractor):
+        async def extract(
+            self, observation: ObservationInput, relation: RelationDecision
+        ) -> tuple[EvidenceProposal, ...]:
+            return (
+                EvidenceProposal(
+                    "expression",
+                    "expression:emoji",
+                    "often",
+                    "repeated_behavior",
+                    0.5,
+                    observation.message_id,
+                    observation.created_at,
+                    "fixture",
+                ),
+            )
+
+    service._extractor = BehaviorExtractor()
+    try:
+        await service.observe_archive_candidate(source)
+        stored = (await store.claims_for_subject("user-1"))[0]
+        assert (stored.visibility_kind, stored.guild_id, stored.channel_id) == (
+            "channel",
+            "guild-1",
+            "channel-1",
+        )
     finally:
         await store.close()
         await engine.dispose()
@@ -498,6 +589,59 @@ async def test_consolidation_does_not_share_evidence_between_same_key_claims(
         behavior = await store.claim("behavior")
         assert explicit is not None and explicit.state == "active"
         assert behavior is not None and behavior.state == "candidate"
+    finally:
+        await store.close()
+        await engine.dispose()
+
+
+async def test_consolidation_keeps_independent_profile_heads_and_cadence_per_scope(
+    tmp_path: Path,
+) -> None:
+    service, store, engine = await service_for(tmp_path / "memory.db", Extractor())
+    try:
+        for suffix, guild_id, channel_id, value in (
+            ("one", "guild-1", "channel-1", "tea"),
+            ("two", "guild-2", "channel-2", "coffee"),
+        ):
+            await store.add_evidence(
+                claim_write(
+                    suffix,
+                    key=f"preference:drink:{suffix}",
+                    value=value,
+                    evidence_class="explicit",
+                    guild_id=guild_id,
+                    channel_id=channel_id,
+                ),
+                evidence_write(f"source-{suffix}", guild_id=guild_id, channel_id=channel_id),
+            )
+            await store.activate_claim(suffix, confirmed_at=NOW)
+
+        await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+        first_cadence = await service.last_consolidated_at(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+        await service.consolidate_user(
+            "user-1", visibility_kind="guild", guild_id="guild-2", channel_id="channel-2"
+        )
+
+        first = await store.active_profile_for_scope(
+            "user-1", visibility_kind="guild", guild_id="guild-1", channel_id="channel-1"
+        )
+        second = await store.active_profile_for_scope(
+            "user-1", visibility_kind="guild", guild_id="guild-2", channel_id="channel-2"
+        )
+        assert first is not None and "tea" in first.overview_text
+        assert second is not None and "coffee" in second.overview_text
+        assert first.profile_version_id != second.profile_version_id
+        assert first_cadence is not None
+        assert (
+            await service.last_consolidated_at(
+                "user-1", visibility_kind="guild", guild_id="guild-2", channel_id="channel-2"
+            )
+            is not None
+        )
     finally:
         await store.close()
         await engine.dispose()

@@ -110,6 +110,9 @@ class ProfileVersionRecord:
     policy_version_id: str
     created_at: datetime
     claim_links: tuple[ProfileClaimLinkRecord, ...] = ()
+    visibility_kind: str = "legacy_unscoped"
+    guild_id: str | None = None
+    channel_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

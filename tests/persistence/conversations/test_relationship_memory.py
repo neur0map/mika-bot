@@ -42,6 +42,8 @@ from tests.persistence.conversations.relationship_memory_test_support import (
 from mika.persistence.conversations.archive_reader import ArchiveReader
 from mika.persistence.conversations.relationship_models import (
     StoredClaimEvidence,
+    StoredConsolidationCadence,
+    StoredProfileScope,
     StoredProfileVersion,
     StoredRecallEvent,
     StoredRecallFeedback,
@@ -371,7 +373,17 @@ async def test_deleting_user_memory_removes_all_derived_rows_only(tmp_path: Path
             replace(
                 _profile("profile-1", "overview"),
                 claim_links=(ProfileClaimLinkRecord("claim-1", "interests", 0),),
+                visibility_kind="guild",
+                guild_id="guild-1",
+                channel_id="channel-1",
             )
+        )
+        await repository.record_scoped_consolidated_at(
+            "user-1",
+            NOW,
+            visibility_kind="guild",
+            guild_id="guild-1",
+            channel_id="channel-1",
         )
         await repository.advance_cursor(ArchiveCursor("weekly", NOW, "1", "policy-1", NOW))
         await repository.record_recall(_recall_event())
@@ -398,6 +410,16 @@ async def test_deleting_user_memory_removes_all_derived_rows_only(tmp_path: Path
                 await inspection.scalar(select(func.count(StoredRecallEvent.recall_event_id))) == 0
             )
             assert await inspection.scalar(select(func.count(StoredRecallFeedback.id))) == 0
+            assert (
+                await inspection.scalar(select(func.count(StoredProfileScope.profile_version_id)))
+                == 0
+            )
+            assert (
+                await inspection.scalar(
+                    select(func.count()).select_from(StoredConsolidationCadence)
+                )
+                == 0
+            )
             assert (
                 await inspection.scalar(select(func.count()).select_from(StoredRecallFeedbackClaim))
                 == 0

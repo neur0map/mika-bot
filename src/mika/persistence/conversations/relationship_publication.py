@@ -14,7 +14,9 @@ from mika.persistence.conversations.relationship_models import (
     StoredPolicyVersion,
     StoredProfileClaimLink,
     StoredProfileHead,
+    StoredProfileScope,
     StoredProfileVersion,
+    StoredScopedProfileHead,
 )
 from mika.persistence.conversations.relationship_records import (
     ClaimTransitionRecord,
@@ -108,19 +110,45 @@ async def _stage_profile(session: AsyncSession, record: ProfileVersionRecord) ->
                 for link in record.claim_links
             ]
         )
+        session.add(
+            StoredProfileScope(
+                profile_version_id=record.profile_version_id,
+                visibility_kind=record.visibility_kind,
+                guild_id=record.guild_id,
+                channel_id=record.channel_id,
+            )
+        )
         await session.flush()
     else:
         await _validate_existing_profile(session, stored, record)
-    head = await session.get(StoredProfileHead, record.subject_user_id)
+    scope_key = _scope_key(record.guild_id, record.channel_id)
+    head = await session.get(
+        StoredScopedProfileHead,
+        (record.subject_user_id, record.visibility_kind, *scope_key),
+    )
     if head is None:
         session.add(
-            StoredProfileHead(
+            StoredScopedProfileHead(
                 subject_user_id=record.subject_user_id,
+                visibility_kind=record.visibility_kind,
+                guild_key=scope_key[0],
+                channel_key=scope_key[1],
                 profile_version_id=record.profile_version_id,
             )
         )
     else:
         head.profile_version_id = record.profile_version_id
+    if record.visibility_kind == "legacy_unscoped":
+        legacy_head = await session.get(StoredProfileHead, record.subject_user_id)
+        if legacy_head is None:
+            session.add(
+                StoredProfileHead(
+                    subject_user_id=record.subject_user_id,
+                    profile_version_id=record.profile_version_id,
+                )
+            )
+        else:
+            legacy_head.profile_version_id = record.profile_version_id
 
 
 async def _validate_links(session: AsyncSession, record: ProfileVersionRecord) -> None:
@@ -163,6 +191,13 @@ async def _validate_existing_profile(
         record.generator_version,
         record.policy_version_id,
     )
+    scope = await session.get(StoredProfileScope, record.profile_version_id)
+    if scope is None or (scope.visibility_kind, scope.guild_id, scope.channel_id) != (
+        record.visibility_kind,
+        record.guild_id,
+        record.channel_id,
+    ):
+        raise ValueError("profile version scope does not match")
     links = tuple(
         ProfileClaimLinkRecord(item.claim_id, item.layer, item.position)
         for item in (
@@ -188,8 +223,9 @@ async def _validate_active_profile(session: AsyncSession) -> None:
             select(StoredProfileClaimLink.claim_id, StoredClaim.state)
             .join(StoredClaim, StoredClaim.claim_id == StoredProfileClaimLink.claim_id)
             .join(
-                StoredProfileHead,
-                StoredProfileHead.profile_version_id == StoredProfileClaimLink.profile_version_id,
+                StoredScopedProfileHead,
+                StoredScopedProfileHead.profile_version_id
+                == StoredProfileClaimLink.profile_version_id,
             )
         )
     ).all()
@@ -199,3 +235,7 @@ async def _validate_active_profile(session: AsyncSession) -> None:
 
 def _link_key(link: ProfileClaimLinkRecord) -> tuple[str, int, str]:
     return (link.layer, link.position, link.claim_id)
+
+
+def _scope_key(guild_id: str | None, channel_id: str | None) -> tuple[str, str]:
+    return (guild_id or "", channel_id or "")

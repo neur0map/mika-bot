@@ -132,6 +132,46 @@ class StoredProfileHead(Base):
     )
 
 
+class StoredProfileScope(Base):
+    """Structural visibility attached to one immutable profile version."""
+
+    __tablename__ = "relationship_profile_scopes"
+
+    profile_version_id: Mapped[str] = mapped_column(
+        ForeignKey("relationship_profile_versions.profile_version_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    visibility_kind: Mapped[str] = mapped_column(String(32), index=True)
+    guild_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    channel_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class StoredScopedProfileHead(Base):
+    """Active immutable profile pointer for one exact conversation scope."""
+
+    __tablename__ = "relationship_scoped_profile_heads"
+
+    subject_user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    visibility_kind: Mapped[str] = mapped_column(String(32), primary_key=True)
+    guild_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    channel_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    profile_version_id: Mapped[str] = mapped_column(
+        ForeignKey("relationship_profile_versions.profile_version_id"), unique=True
+    )
+
+
+class StoredConsolidationCadence(Base):
+    """Last successful consolidation timestamp for one exact scope."""
+
+    __tablename__ = "relationship_consolidation_cadence"
+
+    subject_user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    visibility_kind: Mapped[str] = mapped_column(String(32), primary_key=True)
+    guild_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    channel_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(_UTCDateTime())
+
+
 class StoredPolicyVersion(Base):
     """An immutable effective relationship-memory policy."""
 

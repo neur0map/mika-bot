@@ -31,14 +31,17 @@ from mika.persistence.conversations.relationship_models import (
     StoredArchiveCursor,
     StoredClaim,
     StoredClaimEvidence,
+    StoredConsolidationCadence,
     StoredPolicyHead,
     StoredPolicyVersion,
     StoredProfileClaimLink,
     StoredProfileHead,
+    StoredProfileScope,
     StoredProfileVersion,
     StoredRecallEvent,
     StoredRecallFeedback,
     StoredRecallFeedbackClaim,
+    StoredScopedProfileHead,
 )
 from mika.persistence.conversations.relationship_publication import (
     publish_consolidation as publish_consolidation_transaction,
@@ -256,6 +259,25 @@ class RelationshipMemoryRepository:
 
     async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None:
         """Return the active immutable profile for one user."""
+        scoped = list(
+            (
+                await self._session.scalars(
+                    select(StoredScopedProfileHead)
+                    .where(StoredScopedProfileHead.subject_user_id == subject_user_id)
+                    .limit(2)
+                )
+            ).all()
+        )
+        if len(scoped) == 1:
+            scoped_head = scoped[0]
+            return await self.active_profile_for_scope(
+                subject_user_id,
+                visibility_kind=scoped_head.visibility_kind,
+                guild_id=scoped_head.guild_key or None,
+                channel_id=scoped_head.channel_key or None,
+            )
+        if len(scoped) > 1:
+            return None
         statement = (
             select(StoredProfileVersion)
             .join(
@@ -281,6 +303,53 @@ class RelationshipMemoryRepository:
             ).all()
         )
         return profile_record(stored, links)
+
+    async def active_profile_for_scope(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> ProfileVersionRecord | None:
+        """Return only the profile published for the exact requested scope."""
+        guild_key, channel_key = _scope_key(guild_id, channel_id)
+        statement = (
+            select(StoredProfileVersion, StoredProfileScope)
+            .join(
+                StoredScopedProfileHead,
+                StoredScopedProfileHead.profile_version_id
+                == StoredProfileVersion.profile_version_id,
+            )
+            .join(
+                StoredProfileScope,
+                StoredProfileScope.profile_version_id == StoredProfileVersion.profile_version_id,
+            )
+            .where(
+                StoredScopedProfileHead.subject_user_id == subject_user_id,
+                StoredScopedProfileHead.visibility_kind == visibility_kind,
+                StoredScopedProfileHead.guild_key == guild_key,
+                StoredScopedProfileHead.channel_key == channel_key,
+            )
+        )
+        row = (await self._session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        stored, scope = row
+        links = list(
+            (
+                await self._session.scalars(
+                    select(StoredProfileClaimLink)
+                    .where(StoredProfileClaimLink.profile_version_id == stored.profile_version_id)
+                    .order_by(
+                        StoredProfileClaimLink.layer,
+                        StoredProfileClaimLink.position,
+                        StoredProfileClaimLink.claim_id,
+                    )
+                )
+            ).all()
+        )
+        return profile_record(stored, links, scope)
 
     async def write_policy_version(self, record: RelationshipMemoryPolicyVersionRecord) -> None:
         """Insert an immutable policy version and atomically make it effective."""
@@ -320,7 +389,14 @@ class RelationshipMemoryRepository:
     async def last_consolidated_at(self, subject_user_id: str) -> datetime | None:
         """Return the independent durable timestamp of the last successful run."""
         stored = await self._session.get(GuildConfig, (0, _consolidation_key(subject_user_id)))
-        return None if stored is None else as_utc(datetime.fromisoformat(stored.value))
+        if stored is not None:
+            return as_utc(datetime.fromisoformat(stored.value))
+        latest: datetime | None = await self._session.scalar(
+            select(func.max(StoredConsolidationCadence.completed_at)).where(
+                StoredConsolidationCadence.subject_user_id == subject_user_id
+            )
+        )
+        return latest
 
     async def record_consolidated_at(self, subject_user_id: str, completed_at: datetime) -> None:
         """Persist successful consolidation even when it publishes no profile."""
@@ -331,6 +407,49 @@ class RelationshipMemoryRepository:
             self._session.add(GuildConfig(guild_id=0, key=key, value=value))
         else:
             stored.value = value
+        await self._commit()
+
+    async def scoped_last_consolidated_at(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> datetime | None:
+        """Return consolidation cadence for the exact requested scope."""
+        guild_key, channel_key = _scope_key(guild_id, channel_id)
+        stored = await self._session.get(
+            StoredConsolidationCadence,
+            (subject_user_id, visibility_kind, guild_key, channel_key),
+        )
+        return None if stored is None else stored.completed_at
+
+    async def record_scoped_consolidated_at(
+        self,
+        subject_user_id: str,
+        completed_at: datetime,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> None:
+        """Persist successful consolidation cadence for one exact scope."""
+        guild_key, channel_key = _scope_key(guild_id, channel_id)
+        key = (subject_user_id, visibility_kind, guild_key, channel_key)
+        stored = await self._session.get(StoredConsolidationCadence, key)
+        if stored is None:
+            self._session.add(
+                StoredConsolidationCadence(
+                    subject_user_id=subject_user_id,
+                    visibility_kind=visibility_kind,
+                    guild_key=guild_key,
+                    channel_key=channel_key,
+                    completed_at=completed_at,
+                )
+            )
+        else:
+            stored.completed_at = completed_at
         await self._commit()
 
     async def status(self) -> RelationshipMemoryStatus:
@@ -348,7 +467,8 @@ class RelationshipMemoryRepository:
             or 0
         )
         profile_count = int(
-            await self._session.scalar(select(func.count()).select_from(StoredProfileHead)) or 0
+            await self._session.scalar(select(func.count()).select_from(StoredScopedProfileHead))
+            or 0
         )
         recall_count = int(
             await self._session.scalar(select(func.count()).select_from(StoredRecallEvent)) or 0
@@ -587,8 +707,27 @@ class RelationshipMemoryRepository:
             delete(StoredProfileHead).where(StoredProfileHead.subject_user_id == subject_user_id)
         )
         await self._session.execute(
+            delete(StoredScopedProfileHead).where(
+                StoredScopedProfileHead.subject_user_id == subject_user_id
+            )
+        )
+        await self._session.execute(
+            delete(StoredConsolidationCadence).where(
+                StoredConsolidationCadence.subject_user_id == subject_user_id
+            )
+        )
+        await self._session.execute(
             delete(StoredProfileClaimLink).where(
                 StoredProfileClaimLink.profile_version_id.in_(
+                    select(StoredProfileVersion.profile_version_id).where(
+                        StoredProfileVersion.subject_user_id == subject_user_id
+                    )
+                )
+            )
+        )
+        await self._session.execute(
+            delete(StoredProfileScope).where(
+                StoredProfileScope.profile_version_id.in_(
                     select(StoredProfileVersion.profile_version_id).where(
                         StoredProfileVersion.subject_user_id == subject_user_id
                     )
@@ -631,3 +770,7 @@ class RelationshipMemoryRepository:
 def _consolidation_key(subject_user_id: str) -> str:
     digest = hashlib.sha256(subject_user_id.encode()).hexdigest()[:24]
     return f"relationship_consolidated:{digest}"
+
+
+def _scope_key(guild_id: str | None, channel_id: str | None) -> tuple[str, str]:
+    return (guild_id or "", channel_id or "")

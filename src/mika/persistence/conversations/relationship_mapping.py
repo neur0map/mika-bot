@@ -14,6 +14,7 @@ from mika.persistence.conversations.relationship_models import (
     StoredClaimEvidence,
     StoredPolicyVersion,
     StoredProfileClaimLink,
+    StoredProfileScope,
     StoredProfileVersion,
     StoredRecallEvent,
 )
@@ -127,6 +128,7 @@ def same_claim(stored: StoredClaim, claim: ClaimWrite) -> bool:
 def profile_record(
     stored: StoredProfileVersion,
     links: Sequence[StoredProfileClaimLink] = (),
+    scope: StoredProfileScope | None = None,
 ) -> ProfileVersionRecord:
     """Convert one immutable profile ORM row to its DTO."""
     return ProfileVersionRecord(
@@ -139,6 +141,9 @@ def profile_record(
         stored.policy_version_id,
         stored.created_at,
         tuple(ProfileClaimLinkRecord(item.claim_id, item.layer, item.position) for item in links),
+        "legacy_unscoped" if scope is None else scope.visibility_kind,
+        None if scope is None else scope.guild_id,
+        None if scope is None else scope.channel_id,
     )
 
 

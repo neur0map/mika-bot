@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from functools import cache
 
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -42,4 +43,9 @@ async def session() -> AsyncIterator[AsyncSession]:
 async def init_db() -> None:
     """Create all tables (models are registered at import time)."""
     async with engine().begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await initialize_schema(conn)
+
+
+async def initialize_schema(connection: AsyncConnection) -> None:
+    """Add missing tables while preserving every existing application row."""
+    await connection.run_sync(Base.metadata.create_all)

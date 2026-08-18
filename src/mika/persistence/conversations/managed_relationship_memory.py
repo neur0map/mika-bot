@@ -43,10 +43,44 @@ class ManagedRelationshipMemory:
         async with session() as active:
             return await RelationshipMemoryRepository(active).last_consolidated_at(subject_user_id)
 
+    async def scoped_last_consolidated_at(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> datetime | None:
+        async with session() as active:
+            return await RelationshipMemoryRepository(active).scoped_last_consolidated_at(
+                subject_user_id,
+                visibility_kind=visibility_kind,
+                guild_id=guild_id,
+                channel_id=channel_id,
+            )
+
     async def record_consolidated_at(self, subject_user_id: str, completed_at: datetime) -> None:
         async with session() as active:
             await RelationshipMemoryRepository(active).record_consolidated_at(
                 subject_user_id, completed_at
+            )
+
+    async def record_scoped_consolidated_at(
+        self,
+        subject_user_id: str,
+        completed_at: datetime,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> None:
+        async with session() as active:
+            await RelationshipMemoryRepository(active).record_scoped_consolidated_at(
+                subject_user_id,
+                completed_at,
+                visibility_kind=visibility_kind,
+                guild_id=guild_id,
+                channel_id=channel_id,
             )
 
     async def add_evidence(self, claim: ClaimWrite, evidence: EvidenceWrite) -> ClaimRecord:
@@ -88,6 +122,22 @@ class ManagedRelationshipMemory:
     async def active_profile(self, subject_user_id: str) -> ProfileVersionRecord | None:
         async with session() as active:
             return await RelationshipMemoryRepository(active).active_profile(subject_user_id)
+
+    async def active_profile_for_scope(
+        self,
+        subject_user_id: str,
+        *,
+        visibility_kind: str,
+        guild_id: str | None,
+        channel_id: str | None,
+    ) -> ProfileVersionRecord | None:
+        async with session() as active:
+            return await RelationshipMemoryRepository(active).active_profile_for_scope(
+                subject_user_id,
+                visibility_kind=visibility_kind,
+                guild_id=guild_id,
+                channel_id=channel_id,
+            )
 
     async def write_profile_version(self, record: ProfileVersionRecord) -> None:
         async with session() as active:
