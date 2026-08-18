@@ -53,6 +53,7 @@ class RelationshipObservationJob:
         recovery_attempt_limit: int = 5,
         shutdown_timeout_seconds: float = 10.0,
         spool_path: Path | None = None,
+        spool_ttl_seconds: float = 86_400.0,
         telemetry: RelationshipTelemetry | None = None,
     ) -> None:
         if max_queue_size < 1:
@@ -70,10 +71,16 @@ class RelationshipObservationJob:
         self._retry_backoff_seconds = retry_backoff_seconds
         self._recovery_attempt_limit = recovery_attempt_limit
         self._shutdown_timeout_seconds = shutdown_timeout_seconds
-        self._spool = None if spool_path is None else RelationshipObservationSpool(spool_path)
+        self._spool = (
+            None
+            if spool_path is None
+            else RelationshipObservationSpool(spool_path, ttl_seconds=spool_ttl_seconds)
+        )
+        self._queued_ids: set[str] = set()
         self.telemetry = telemetry or RelationshipTelemetry()
         self._task: asyncio.Task[None] | None = None
         self.last_failure: str | None = None
+        self._live_since_archive = 0
 
     @property
     def running(self) -> bool:
@@ -84,10 +91,7 @@ class RelationshipObservationJob:
         """Start one worker gated on Discord readiness."""
         if not self._enabled or self.running:
             return
-        if self._spool is not None and self._queue.empty():
-            for observation in self._spool.pending(self._queue.maxsize):
-                with contextlib.suppress(asyncio.QueueFull):
-                    self._queue.put_nowait(observation)
+        self._replenish_from_spool()
         self._task = asyncio.create_task(
             self._run(wait_until_ready), name="relationship-observation"
         )
@@ -101,8 +105,12 @@ class RelationshipObservationJob:
             self._spool.put(observation)
         try:
             self._queue.put_nowait(observation)
+            self._queued_ids.add(observation.message_id)
         except asyncio.QueueFull:
             if len(self._overflow) == self._overflow.maxlen:
+                if self._spool is not None:
+                    self._emit_queue(envelope.message_id, "deferred", "durable_spool")
+                    return True
                 logger.warning(
                     "relationship observation buffers full; turn remains in local memory"
                 )
@@ -111,6 +119,7 @@ class RelationshipObservationJob:
                     self._spool.complete(observation.message_id)
                 return False
             self._overflow.append(observation)
+            self._queued_ids.add(observation.message_id)
             self._emit_queue(envelope.message_id, "deferred", "buffer_deferred")
         return True
 
@@ -132,12 +141,17 @@ class RelationshipObservationJob:
         await wait_until_ready()
         while True:
             try:
-                observation = await asyncio.wait_for(self._queue.get(), timeout=30.0)
+                observation = await asyncio.wait_for(self._queue.get(), timeout=0.25)
             except TimeoutError:
                 await self._run_pending_archive()
+                self._replenish_from_spool()
                 continue
             try:
                 await self._observe_with_retry(observation)
+                self._live_since_archive += 1
+                if self._live_since_archive >= self._queue.maxsize:
+                    await self._run_pending_archive()
+                    self._live_since_archive = 0
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -145,8 +159,12 @@ class RelationshipObservationJob:
                 logger.warning("relationship observation failed: %s", self.last_failure)
             finally:
                 self._queue.task_done()
+                self._queued_ids.discard(observation.message_id)
                 if self._overflow and not self._queue.full():
-                    self._queue.put_nowait(self._overflow.popleft())
+                    deferred = self._overflow.popleft()
+                    self._queue.put_nowait(deferred)
+                    self._queued_ids.add(deferred.message_id)
+                self._replenish_from_spool()
 
     async def _run_pending_archive(self) -> None:
         runner = getattr(self._service, "run_pending_observations", None)
@@ -176,6 +194,7 @@ class RelationshipObservationJob:
                             observation.message_id,
                             self.last_failure,
                             max_attempts=self._recovery_attempt_limit,
+                            backoff_seconds=self._retry_backoff_seconds,
                         )
                         if dead_letter:
                             self._emit_queue(
@@ -185,6 +204,14 @@ class RelationshipObservationJob:
                     return
                 self._emit_queue(observation.message_id, "retry", f"{self.last_failure}:retry")
                 await asyncio.sleep(self._retry_backoff_seconds * (2**attempt))
+
+    def _replenish_from_spool(self) -> None:
+        if self._spool is None:
+            return
+        available = self._queue.maxsize - self._queue.qsize()
+        for observation in self._spool.pending(available, excluding=frozenset(self._queued_ids)):
+            self._queue.put_nowait(observation)
+            self._queued_ids.add(observation.message_id)
 
     async def _consolidate_if_due(self, observation: ObservationInput) -> None:
         previous = await self._service.last_consolidated_at(observation.subject_user_id)

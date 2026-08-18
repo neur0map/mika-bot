@@ -48,9 +48,16 @@ Run the deterministic held-out benchmark before enabling or deploying relationsh
 uv run python tools/run_relationship_memory_benchmark.py --mode all
 ```
 
-The command runs the production lexical composition under both the lexical and local-hybrid labels.
-Local hybrid remains informational until Mika has a configured production embedding scorer. The
+The command benchmarks the isolated relationship service and affinity-retriever components, not the
+complete production `ManagedSocialMemory` and merged Honcho composition. Local hybrid remains
+informational until Mika has a configured embedding scorer. The
 lexical rollout gate requires zero cross-scope leakage, at least 95% correction adoption, at least
 98% correct-person attribution, and measured wall-clock local p95 retrieval below 100 ms.
 Content-free aggregate JSON and per-case JSONL are written under `var/benchmarks/`. The Honcho mode
 is included only when Honcho is configured and remains informational.
+
+Accepted visible observations use a private (`0600`) local spool and expire after 24 hours by
+default (`MIKA_MEMORY_RELATIONSHIP_SPOOL_TTL_SECONDS`). Retries drain automatically without a
+restart. Dead letters retain content-free status only; their message payload is purged. Operator
+health reports operation and per-phase p95 latency, and treats failures, retries, and dead letters
+as unhealthy outcomes.

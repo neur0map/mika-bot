@@ -207,7 +207,7 @@ async def run_local_relationship_benchmark(
     baseline_recall_quality: float | None = None,
     external_recall: Callable[[str], Awaitable[str]] | None = None,
 ) -> RelationshipBenchmarkReport:
-    """Run production local relationship components against an isolated SQLite store."""
+    """Run isolated relationship-service and affinity-retriever components."""
     backend = await LocalBenchmarkBackend.create(
         database_path, mode.value, external_recall=external_recall
     )

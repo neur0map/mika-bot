@@ -11,10 +11,12 @@
   and retrieval latency.
 - In the verified seven-case run, lexical and the parity-only local-hybrid label both reached 100% recall,
   correction adoption, attribution, relation accuracy, and irrelevant rejection with zero scope
-  leaks. Lexical wall-clock p95 was 35.70 ms. Local hybrid is not rollout-eligible until a genuine
+  leaks. Lexical wall-clock p95 was 28.095 ms. Local hybrid is not rollout-eligible until a genuine
   production embedding scorer is wired; unattributed external-memory results remain informational.
-- Added a restart-safe local observation spool, bounded shutdown drain and retry/dead-letter state,
-  configured DM visibility, and durable content-free operation health with per-phase p95 timings.
+- Added a restart-safe local observation spool with continuous bounded-page draining, scheduled
+  retries, a short configurable retention window, private file permissions, and payload-free dead
+  letters. Configured DM visibility and durable content-free operation health now include per-phase
+  p95 timings; retry and dead-letter outcomes count as unhealthy.
 
 ## 2026-08-17 — Natural expression skill
 

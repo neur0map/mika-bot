@@ -832,6 +832,21 @@ def _operation_health(
             "failed": sum(item.outcome == "failed" for item in records),
             "fallback": sum(bool(item.fallback_reason) for item in records),
             "retry": sum(item.outcome == "retry" for item in records),
+            "dead_letter": sum(item.outcome == "dead_letter" for item in records),
+            "unhealthy": sum(
+                item.outcome in {"failed", "retry", "dead_letter"} for item in records
+            ),
             "p95_ms": round(percentile, 3),
         }
+        phase_names = sorted(
+            {name for item in records for name in json.loads(item.phase_durations_json or "{}")}
+        )
+        for phase_name in phase_names:
+            values = sorted(
+                float(json.loads(item.phase_durations_json or "{}").get(phase_name, 0.0))
+                for item in records
+                if phase_name in json.loads(item.phase_durations_json or "{}")
+            )
+            index = max(0, math.ceil(len(values) * 0.95) - 1)
+            result[operation][f"p95_{phase_name}_ms"] = round(values[index], 3)
     return result

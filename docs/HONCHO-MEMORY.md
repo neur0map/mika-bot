@@ -52,7 +52,8 @@ Then set in your bot's `.env`: `MIKA_MEMORY_HONCHO_ENABLED=true` and
 ## Benchmark retrieval modes
 
 `uv run python tools/run_relationship_memory_benchmark.py --mode all` always evaluates lexical
-and local-hybrid relationship recall. Both use the production lexical scorer until a real local
+and local-hybrid relationship recall. Both use the isolated relationship retriever's lexical scorer
+until a real local
 embedding scorer is configured, so local hybrid is diagnostic and not rollout-eligible. The runner
 adds `local_plus_honcho` only when
 `MIKA_MEMORY_HONCHO_ENABLED=true`; requesting that mode directly while Honcho is disabled exits

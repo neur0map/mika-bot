@@ -1,5 +1,7 @@
 """Content-free relationship operation telemetry."""
 
+import asyncio
+
 from mika.conversation.relationships.telemetry import RelationshipTelemetry
 
 
@@ -53,3 +55,39 @@ async def test_telemetry_persists_actual_operation_records() -> None:
 
     assert len(saved) == 1
     assert "secret-query" not in repr(saved)
+
+
+async def test_telemetry_uses_one_worker_retries_and_flushes_deterministically() -> None:
+    attempts = 0
+    saved = []
+
+    async def flaky_save(record: object) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary")
+        saved.append(record)
+
+    telemetry = RelationshipTelemetry(sink=flaky_save)
+    for correlation in ("one", "two"):
+        telemetry.emit(
+            "retrieval",
+            "ok",
+            correlation_id=correlation,
+            duration_ms=1,
+            candidate_count=0,
+            selected_count=0,
+            rejected_count=0,
+            estimated_tokens=0,
+            fallback_reason=None,
+            profile_changed=None,
+            policy_version_id="policy-1",
+        )
+    workers = {task for task in asyncio.all_tasks() if task.get_name() == "relationship-telemetry"}
+    await telemetry.flush()
+
+    assert len(workers) == 1
+    assert len(saved) == 2
+    assert attempts == 3
+    assert telemetry.last_sink_failure is None
+    await telemetry.close()

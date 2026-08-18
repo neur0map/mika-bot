@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
+import stat
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from mika.ai.learning.reflection.relationship_job import RelationshipObservationJob
+from mika.ai.learning.reflection.relationship_spool import RelationshipObservationSpool
 from mika.conversation.contracts import ConversationEnvelope
 from mika.conversation.relationships.service import ObservationInput, ObservationResult
 
@@ -43,10 +47,30 @@ class Service:
 
 
 class RecoveredService(Service):
+    def __init__(self, expected_calls: int = 1) -> None:
+        super().__init__()
+        self.expected_calls = expected_calls
+        self.all_processed = asyncio.Event()
+
     async def observe_turn(self, observation: ObservationInput) -> ObservationResult:
         self.calls.append(observation.message_id)
         self.processed.set()
+        if len(self.calls) >= self.expected_calls:
+            self.all_processed.set()
         return ObservationResult("observed", "policy-1")
+
+
+class ArchiveService(RecoveredService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.archive_batches = 0
+        self.archive_processed = asyncio.Event()
+
+    async def run_pending_observations(self, *, limit: int | None = None) -> object:
+        del limit
+        self.archive_batches += 1
+        self.archive_processed.set()
+        return object()
 
 
 def envelope(message_id: str) -> ConversationEnvelope:
@@ -167,3 +191,78 @@ async def test_exhausted_recovery_is_visible_as_dead_letter(tmp_path: Path) -> N
     await job.close()
 
     assert any(record.outcome == "dead_letter" for record in job.telemetry.records)
+    with sqlite3.connect(tmp_path / "observations.sqlite3") as connection:
+        payload, attempts = connection.execute(
+            "SELECT payload_json, attempts FROM pending_observations WHERE message_id = 'fails'"
+        ).fetchone()
+    assert payload == "{}"
+    assert attempts == 1
+
+
+async def test_durable_spool_drains_more_than_memory_capacity_without_restart(
+    tmp_path: Path,
+) -> None:
+    service = RecoveredService(expected_calls=7)
+    ready = asyncio.Event()
+    job = RelationshipObservationJob(
+        service, max_queue_size=1, spool_path=tmp_path / "observations.sqlite3"
+    )
+    for index in range(7):
+        assert job.submit(envelope(str(index)))
+
+    ready.set()
+    job.start(ready.wait)
+    await asyncio.wait_for(service.all_processed.wait(), timeout=1)
+    await job.close()
+
+    assert service.calls == [str(index) for index in range(7)]
+
+
+async def test_spool_retries_until_dead_letter_without_restart(tmp_path: Path) -> None:
+    service = Service()
+    ready = asyncio.Event()
+    ready.set()
+    path = tmp_path / "observations.sqlite3"
+    job = RelationshipObservationJob(
+        service,
+        max_queue_size=1,
+        retry_limit=0,
+        retry_backoff_seconds=0.01,
+        recovery_attempt_limit=3,
+        spool_path=path,
+    )
+    assert job.submit(envelope("fails"))
+    job.start(ready.wait)
+    await asyncio.wait_for(service.third_call.wait(), timeout=1)
+    await job.close()
+
+    assert len(service.calls) == 3
+    assert any(record.outcome == "dead_letter" for record in job.telemetry.records)
+
+
+def test_spool_file_is_private_and_expired_payload_is_purged(tmp_path: Path) -> None:
+    path = tmp_path / "observations.sqlite3"
+    spool = RelationshipObservationSpool(path, ttl_seconds=0.001)
+    spool.put(ObservationInput.from_envelope(envelope("private")))
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+    time.sleep(0.01)
+    assert spool.pending(1) == ()
+    with sqlite3.connect(path) as connection:
+        count = connection.execute("SELECT COUNT(*) FROM pending_observations").fetchone()[0]
+    assert count == 0
+
+
+async def test_live_traffic_cannot_starve_bounded_archive_batches() -> None:
+    service = ArchiveService()
+    ready = asyncio.Event()
+    ready.set()
+    job = RelationshipObservationJob(service, max_queue_size=2)
+    job.start(ready.wait)
+    for index in range(4):
+        assert job.submit(envelope(f"live-{index}"))
+
+    await asyncio.wait_for(service.archive_processed.wait(), timeout=1)
+    await job.close()
+
+    assert service.archive_batches >= 1

@@ -234,6 +234,9 @@ async def test_pending_observations_are_bounded_and_cursor_idempotent(tmp_path: 
         cursor = await store.cursor("shared_archive")
         assert cursor is not None
         assert cursor.discord_message_id == "102"
+        claims = await store.claims_for_subject("user-1")
+        assert claims
+        assert {claim.state for claim in claims} == {"candidate"}
         assert (await service.run_pending_observations()).processed == 0
     finally:
         await store.close()

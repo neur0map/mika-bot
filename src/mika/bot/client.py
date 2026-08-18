@@ -236,6 +236,7 @@ class BotApp(commands.Bot):
             ),
             telemetry=self.relationship_service.telemetry,
             spool_path=settings.data_dir / "relationship-observations.sqlite3",
+            spool_ttl_seconds=settings.memory.relationship_spool_ttl_seconds,
         )
         actions = ActionPlanner()
         self.conversation = ConversationEngine(
@@ -299,9 +300,9 @@ class BotApp(commands.Bot):
             self._web_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._web_task
+        await self.relationship_service.telemetry.close()
         with contextlib.suppress(Exception):
             await self.llm.shutdown()
-        await self.relationship_service.telemetry.flush()
         await super().close()
 
 

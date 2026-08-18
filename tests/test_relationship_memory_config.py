@@ -33,6 +33,7 @@ def test_relationship_memory_defaults_to_disabled_shadow_mode() -> None:
     assert settings.relationship_shadow_mode is True
     assert settings.relationship_batch_size > 0
     assert settings.relationship_consolidation_interval_seconds > 0
+    assert settings.relationship_spool_ttl_seconds == 86_400.0
 
 
 def test_relationship_learning_can_be_explicitly_disabled() -> None:

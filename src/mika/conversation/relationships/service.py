@@ -347,10 +347,18 @@ class RelationshipMemoryService(RelationshipServiceTelemetry):
         processed = 0
         for source in sources[:bound]:
             try:
-                await self.observe_turn(ObservationInput.from_archive(source))
+                result = await self.observe_archive_candidate(source)
             except Exception as error:
                 return PendingObservationResult(
                     processed, True, policy_id, source.discord_message_id, type(error).__name__
+                )
+            if result.outcome != "observed" or result.policy_version_id != policy_id:
+                return PendingObservationResult(
+                    processed,
+                    True,
+                    result.policy_version_id,
+                    source.discord_message_id,
+                    "policy_changed" if result.policy_version_id != policy_id else result.outcome,
                 )
             await self._repository.advance_cursor(
                 ArchiveCursor(

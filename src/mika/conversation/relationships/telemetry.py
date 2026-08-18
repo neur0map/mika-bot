@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
@@ -42,7 +43,9 @@ class RelationshipTelemetry:
             raise ValueError("telemetry capacity must be positive")
         self._records: deque[RelationshipOperationRecord] = deque(maxlen=capacity)
         self._sink = sink
-        self._pending: set[asyncio.Future[None]] = set()
+        self._queue: asyncio.Queue[RelationshipOperationRecord] = asyncio.Queue(maxsize=capacity)
+        self._worker: asyncio.Task[None] | None = None
+        self.last_sink_failure: str | None = None
 
     @property
     def records(self) -> tuple[RelationshipOperationRecord, ...]:
@@ -87,11 +90,44 @@ class RelationshipTelemetry:
         )
         self._records.append(record)
         if self._sink is not None:
-            task = asyncio.ensure_future(self._sink(record))
-            self._pending.add(task)
-            task.add_done_callback(self._pending.discard)
+            try:
+                self._queue.put_nowait(record)
+            except asyncio.QueueFull:
+                self.last_sink_failure = "telemetry_queue_full"
+                return
+            if self._worker is None or self._worker.done():
+                self._worker = asyncio.create_task(self._run_sink(), name="relationship-telemetry")
 
     async def flush(self) -> None:
         """Await pending durable writes without exposing their payloads."""
-        if self._pending:
-            await asyncio.gather(*tuple(self._pending), return_exceptions=True)
+        await self._queue.join()
+
+    async def close(self) -> None:
+        """Flush writes and stop the owned sink worker."""
+        await self.flush()
+        worker = self._worker
+        self._worker = None
+        if worker is not None:
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker
+
+    async def _run_sink(self) -> None:
+        assert self._sink is not None
+        while True:
+            record = await self._queue.get()
+            try:
+                retry_count = 3
+                for attempt in range(retry_count):
+                    try:
+                        await self._sink(record)
+                        self.last_sink_failure = None
+                        break
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as error:
+                        self.last_sink_failure = type(error).__name__
+                        if attempt < retry_count - 1:
+                            await asyncio.sleep(0)
+            finally:
+                self._queue.task_done()

@@ -69,7 +69,7 @@ class _MutableClock:
 
 
 class LocalBenchmarkBackend:
-    """Run the actual service and retriever with no external provider dependency."""
+    """Run isolated relationship service and affinity retriever components."""
 
     def __init__(
         self,
@@ -99,7 +99,7 @@ class LocalBenchmarkBackend:
         *,
         external_recall: Callable[[str], Awaitable[str]] | None = None,
     ) -> LocalBenchmarkBackend:
-        """Create an empty benchmark store and production service graph."""
+        """Create an empty component-benchmark store and service graph."""
         engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
